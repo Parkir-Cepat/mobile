@@ -33,9 +33,14 @@ export const userTypeDefs = `#gql
         password: String
     }
 
+    input googleLogin {
+        idToken: String
+    }
+
     type Mutation {
         register(newUser: registerInput): User
         login(user: loginInput): LoginResponse
+        loginGoogle(input: googleLogin): LoginResponse
     }
 `;
 
@@ -53,6 +58,11 @@ export const userResolvers = {
       const { email, password } = args.user;
       const result = await UserModel.login({ email, password });
       return result;
+    },
+    loginGoogle: async (parent, args) => {
+      const { idToken } = args.input;
+      const token = await UserModel.loginGoogle({ idToken });
+      return token;
     },
   },
 };

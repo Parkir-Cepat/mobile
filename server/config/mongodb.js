@@ -7,7 +7,7 @@ export const client = new MongoClient(uri);
 let db = null;
 
 function connect() {
-  db = client.db("parkir-cepat");
+  db = client.db("ParkirenDb");
   return db;
 }
 

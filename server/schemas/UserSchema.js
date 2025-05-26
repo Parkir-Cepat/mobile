@@ -11,6 +11,11 @@ export const userTypeDefs = `#gql
         updatedAt: String
     }
 
+    type LoginResponse {
+        token: String
+        user: User
+    }
+
     type Query {
     _dummy: String
     }
@@ -23,8 +28,14 @@ export const userTypeDefs = `#gql
         amount: Float
     }
 
+    input loginInput {
+        email: String
+        password: String
+    }
+
     type Mutation {
         register(newUser: registerInput): User
+        login(user: loginInput): LoginResponse
     }
 `;
 
@@ -37,6 +48,11 @@ export const userResolvers = {
       const { newUser } = args;
       const user = await UserModel.register(newUser);
       return user;
+    },
+    login: async (parent, args) => {
+      const { email, password } = args.user;
+      const result = await UserModel.login({ email, password });
+      return result;
     },
   },
 };

@@ -11,23 +11,94 @@ import {
   Image,
   StatusBar,
   SafeAreaView,
+  Alert,
 } from "react-native";
+import { gql, useMutation } from "@apollo/client";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+
+const ADD_USER = gql`
+  mutation Register($newUser: registerInput) {
+    register(newUser: $newUser) {
+      _id
+      email
+      name
+      role
+      amount
+      createdAt
+      updatedAt
+    }
+  }
+`;
 
 export default function RegisterScreen() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [amount, setAmount] = useState("");
-  const [role, setRole] = useState("seeker");
+  const scrollViewRef = useRef();
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [saveUser, { data, loading, error }] = useMutation(ADD_USER);
+  const [input, setInput] = useState({
+    email: "",
+    password: "",
+    name: "",
+    role: "",
+    amount: "",
+  });
 
-  const scrollViewRef = useRef(null);
-  const inputRefs = {
-    name: useRef(null),
-    email: useRef(null),
-    password: useRef(null),
-    amount: useRef(null),
+  const handleChange = (value, key) => {
+    setInput({
+      ...input,
+      [key]: value,
+    });
+  };
+
+  const handleSignUp = async () => {
+    setErrors({});
+    setIsLoading(true);
+
+    try {
+      await saveUser({
+        variables: {
+          newUser: {
+            email: input.email,
+            password: input.password,
+            name: input.name,
+            role: input.role,
+            amount: parseFloat(input.amount),
+          },
+        },
+      });
+
+      Alert.alert("Success", "Account created successfully!");
+
+      setInput({ email: "", password: "", name: "", role: "", amount: "" });
+      setErrors({});
+      setShowPassword(false);
+    } catch (err) {
+      const newErrors = {};
+      if (err.graphQLErrors && err.graphQLErrors.length > 0) {
+        const errorMessage = err.graphQLErrors[0].message.toLowerCase();
+        if (errorMessage.includes("name")) {
+          newErrors.name = err.graphQLErrors[0].message;
+        } else if (errorMessage.includes("email")) {
+          newErrors.email = err.graphQLErrors[0].message;
+        } else if (errorMessage.includes("password")) {
+          newErrors.password = err.graphQLErrors[0].message;
+        } else if (errorMessage.includes("amount")) {
+          newErrors.amount = err.graphQLErrors[0].message;
+        } else if (errorMessage.includes("role")) {
+          newErrors.role = err.graphQLErrors[0].message;
+        } else {
+          newErrors.general = err.graphQLErrors[0].message;
+        }
+      } else {
+        newErrors.general =
+          err.message || "An error occurred. Please try again.";
+      }
+      setErrors(newErrors);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -47,11 +118,10 @@ export default function RegisterScreen() {
         >
           <View style={styles.logoContainer}>
             <Image
-              source={require("../assets/favicon.png")}
+              source={require("../assets/logo.png")}
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text style={styles.appName}>Parkirin</Text>
           </View>
 
           <Text style={styles.title}>Create Account</Text>
@@ -59,8 +129,16 @@ export default function RegisterScreen() {
             Register to start your journey with us
           </Text>
 
+          {/* General Error */}
+          {errors.general ? (
+            <Text style={styles.errorText}>{errors.general}</Text>
+          ) : null}
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Full Name</Text>
+            {errors.name ? (
+              <Text style={styles.errorText}>{errors.name}</Text>
+            ) : null}
             <View style={styles.inputWrapper}>
               <Ionicons
                 name="person-outline"
@@ -69,11 +147,10 @@ export default function RegisterScreen() {
                 style={styles.inputIcon}
               />
               <TextInput
-                ref={inputRefs.name}
                 style={styles.input}
                 placeholder="Enter your full name"
-                value={name}
-                onChangeText={setName}
+                value={input.name}
+                onChangeText={(value) => handleChange(value, "name")}
                 placeholderTextColor="#8A94A6"
               />
             </View>
@@ -81,6 +158,9 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Email Address</Text>
+            {errors.email ? (
+              <Text style={styles.errorText}>{errors.email}</Text>
+            ) : null}
             <View style={styles.inputWrapper}>
               <Ionicons
                 name="mail-outline"
@@ -89,11 +169,10 @@ export default function RegisterScreen() {
                 style={styles.inputIcon}
               />
               <TextInput
-                ref={inputRefs.email}
                 style={styles.input}
                 placeholder="Enter your email"
-                value={email}
-                onChangeText={setEmail}
+                value={input.email}
+                onChangeText={(value) => handleChange(value, "email")}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 placeholderTextColor="#8A94A6"
@@ -103,6 +182,9 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Password</Text>
+            {errors.password ? (
+              <Text style={styles.errorText}>{errors.password}</Text>
+            ) : null}
             <View style={styles.inputWrapper}>
               <Ionicons
                 name="lock-closed-outline"
@@ -111,11 +193,10 @@ export default function RegisterScreen() {
                 style={styles.inputIcon}
               />
               <TextInput
-                ref={inputRefs.password}
                 style={styles.input}
                 placeholder="Create a password"
-                value={password}
-                onChangeText={setPassword}
+                value={input.password}
+                onChangeText={(value) => handleChange(value, "password")}
                 secureTextEntry={!showPassword}
                 placeholderTextColor="#8A94A6"
               />
@@ -134,6 +215,9 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Initial Amount (Rp)</Text>
+            {errors.amount ? (
+              <Text style={styles.errorText}>{errors.amount}</Text>
+            ) : null}
             <View style={styles.inputWrapper}>
               <Ionicons
                 name="wallet-outline"
@@ -142,11 +226,10 @@ export default function RegisterScreen() {
                 style={styles.inputIcon}
               />
               <TextInput
-                ref={inputRefs.amount}
                 style={styles.input}
                 placeholder="Enter initial amount"
-                value={amount}
-                onChangeText={setAmount}
+                value={input.amount}
+                onChangeText={(value) => handleChange(value, "amount")}
                 keyboardType="numeric"
                 placeholderTextColor="#8A94A6"
               />
@@ -155,16 +238,19 @@ export default function RegisterScreen() {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Select Your Role</Text>
+            {errors.role ? (
+              <Text style={styles.errorText}>{errors.role}</Text>
+            ) : null}
             <View style={styles.roleContainer}>
               <TouchableOpacity
                 style={[
                   styles.roleOption,
-                  role === "seeker" && styles.roleOptionSelected,
+                  input.role === "seeker" && styles.roleOptionSelected,
                 ]}
-                onPress={() => setRole("seeker")}
+                onPress={() => handleChange("seeker", "role")}
               >
                 <View style={styles.radioButton}>
-                  {role === "seeker" && (
+                  {input.role === "seeker" && (
                     <View style={styles.radioButtonSelected} />
                   )}
                 </View>
@@ -179,12 +265,12 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={[
                   styles.roleOption,
-                  role === "owner" && styles.roleOptionSelected,
+                  input.role === "owner" && styles.roleOptionSelected,
                 ]}
-                onPress={() => setRole("owner")}
+                onPress={() => handleChange("owner", "role")}
               >
                 <View style={styles.radioButton}>
-                  {role === "owner" && (
+                  {input.role === "owner" && (
                     <View style={styles.radioButtonSelected} />
                   )}
                 </View>
@@ -198,8 +284,16 @@ export default function RegisterScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.registerButton}>
-            <Text style={styles.registerButtonText}>Register</Text>
+          <TouchableOpacity
+            onPress={handleSignUp}
+            style={styles.registerButton}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Text style={styles.registerButtonText}>Loading...</Text>
+            ) : (
+              <Text style={styles.registerButtonText}>Register</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
@@ -217,13 +311,13 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F7FA", // Latar lembut untuk kesan premium
+    backgroundColor: "#F5F7FA",
   },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 25,
     paddingTop: 50,
-    paddingBottom: 100, // Padding tambahan agar konten tidak tertutup keyboard
+    paddingBottom: 100,
   },
   logoContainer: {
     flexDirection: "row",
@@ -232,15 +326,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logo: {
-    width: 50,
+    width: 130,
     height: 50,
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: "700",
-    marginLeft: 12,
-    color: "#1E3A8A", // Biru tua premium
-    letterSpacing: 0.5,
   },
   title: {
     fontSize: 32,
@@ -257,7 +344,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 25,
   },
   inputLabel: {
     fontSize: 15,
@@ -308,7 +395,7 @@ const styles = StyleSheet.create({
   },
   roleOptionSelected: {
     borderWidth: 1.5,
-    borderColor: "#D4A017", // Aksen emas untuk premium
+    borderColor: "#D4A017",
     backgroundColor: "#F8FAFC",
   },
   radioButton: {
@@ -342,7 +429,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   registerButton: {
-    backgroundColor: "#1E3A8A", // Warna solid biru tua
+    backgroundColor: "#1E3A8A",
     borderRadius: 16,
     height: 60,
     alignItems: "center",
@@ -375,5 +462,12 @@ const styles = StyleSheet.create({
     color: "#D4A017",
     fontWeight: "600",
     fontSize: 16,
+  },
+  errorText: {
+    color: "#FF6B6B",
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

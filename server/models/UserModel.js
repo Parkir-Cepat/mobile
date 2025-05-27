@@ -1,0 +1,60 @@
+import { getDb } from "../config/mongodb.js";
+import { hashPassword } from "../helpers/bcrypt.js";
+
+const userCollection = () => getDb().collection("users");
+
+function validateEmail(email) {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}
+
+export default class UserModel {
+  static async register({ email, password, name, role, amount }) {
+    if (!name) throw new Error("Name is required");
+
+    if (!email) throw new Error("Email is required");
+
+    if (!validateEmail(email)) throw new Error("Invalid email format");
+
+    const unique = await userCollection().findOne({ email });
+    if (unique) throw new Error("Email already registered");
+
+    if (!password) throw new Error("Password is required");
+
+    if (password.length < 6)
+      throw new Error("Password must be at least 6 characters");
+
+    if (typeof amount !== "number" || isNaN(amount)) {
+      throw new Error("Invalid amount format");
+    }
+    if (amount < 0) {
+      throw new Error("Amount cannot be negative");
+    }
+    if (amount < 5000) {
+      throw new Error("Minimum top-up amount is 5,000");
+    }
+
+    const allowedRoles = ["owner", "seeker"];
+    if (!allowedRoles.includes(role)) {
+      throw new Error("Invalid role. Must be either 'owner' or 'seeker'");
+    }
+
+    const hashed = hashPassword(password);
+
+    const newUser = {
+      email,
+      password: hashed,
+      name,
+      role,
+      amount,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await userCollection().insertOne(newUser);
+    newUser._id = result.insertedId;
+
+    delete newUser.password;
+    return newUser;
+  }
+}

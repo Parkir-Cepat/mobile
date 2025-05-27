@@ -1,5 +1,6 @@
 import { getDb } from "../config/mongodb.js";
-import { hashPassword } from "../helpers/bcrypt.js";
+import { comparePassword, hashPassword } from "../helpers/bcrypt.js";
+import { generateToken } from "../helpers/jwt.js";
 
 const userCollection = () => getDb().collection("users");
 
@@ -56,5 +57,22 @@ export default class UserModel {
 
     delete newUser.password;
     return newUser;
+  }
+
+  static async login({ email, password }) {
+    if (!email) throw new Error("Email is required");
+    if (!password) throw new Error("Password is required");
+
+    const user = await userCollection().findOne({ email });
+    if (!user) throw new Error("Invalid email or password");
+
+    const isPasswordValid = comparePassword(password, user.password);
+    if (!isPasswordValid) throw new Error("Invalid email or password");
+
+    const token = generateToken({ _id: user._id });
+    return {
+      token,
+      user,
+    };
   }
 }

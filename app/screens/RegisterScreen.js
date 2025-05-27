@@ -33,6 +33,7 @@ const ADD_USER = gql`
 
 export default function RegisterScreen() {
   const scrollViewRef = useRef();
+  const navigation = useNavigation();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -99,6 +100,10 @@ export default function RegisterScreen() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleNavigateToLogin = () => {
+    navigation.navigate("LoginScreen");
   };
 
   return (
@@ -298,7 +303,7 @@ export default function RegisterScreen() {
 
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account?</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={handleNavigateToLogin}>
               <Text style={styles.loginLink}> Log In</Text>
             </TouchableOpacity>
           </View>

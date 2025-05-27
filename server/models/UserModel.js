@@ -1,5 +1,6 @@
 import { getDb } from "../config/mongodb.js";
 import { comparePassword, hashPassword } from "../helpers/bcrypt.js";
+import { verifyGoogleToken } from "../helpers/googleAuth.js";
 import { generateToken } from "../helpers/jwt.js";
 
 const userCollection = () => getDb().collection("users");
@@ -74,5 +75,30 @@ export default class UserModel {
       token,
       user,
     };
+  }
+
+  static async loginGoogle({ idToken }) {
+    if (!idToken) throw new Error("Google ID Token is required");
+
+    const payload = await verifyGoogleToken(idToken);
+    const { email, name, sub } = payload;
+
+    let user = await userCollection().findOne({ email });
+    if (!user) {
+      const newUser = {
+        email,
+        name,
+        password: hashPassword(sub),
+        role: "seeker",
+        amount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const result = await userCollection().insertOne(newUser);
+      user = { ...newUser, _id: result.insertedId };
+    }
+
+    const token = generateToken({ _id: user._id });
+    return { token, user };
   }
 }

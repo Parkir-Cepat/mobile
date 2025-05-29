@@ -8,11 +8,11 @@ import LoginScreen from "../screens/LoginScreens";
 import HomeScreen from "../screens/HomeScreen";
 import SearchParkingScreen from "../screens/SearchParkingScreen";
 // import ProfileScreen from "../screens/ProfileScreen";
-// import TopUpScreen from "../screens/TopUpScreen";
 // import ParkingHistoryScreen from "../screens/ParkingHistoryScreen";
 // import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import * as SecureStore from "expo-secure-store";
+import TopUpScreen from "../screens/TopUpScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -22,7 +22,7 @@ function BottomTabNavigator() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#1E3A8A",
+        tabBarActiveTintColor: "#BE5B50",
         tabBarInactiveTintColor: "#9CA3AF",
         tabBarStyle: {
           backgroundColor: "white",
@@ -30,17 +30,17 @@ function BottomTabNavigator() {
           elevation: 10,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.1,
+          shadowOpacity: 0.2,
           shadowRadius: 5,
-          height: 60,
+          height: 65,
           paddingBottom: 5,
-          paddingTop: 5,
+          paddingTop: 3,
         },
       }}
     >
       <Tab.Screen
-        name="Home"
-        component={HomeScreen}
+        name="HomeScreen"
+        component={HomeNavigator}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
@@ -78,6 +78,23 @@ function BottomTabNavigator() {
   );
 }
 
+const HomeNavigator = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="HomeScreen"
+        component={HomeScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="TopUpScreen"
+        component={TopUpScreen}
+        options={{ headerShown: false }}
+      />
+    </Stack.Navigator>
+  );
+};
+
 function AppNavigator() {
   const [isSignIn, setIsSignIn] = useState(false);
 
@@ -104,12 +121,6 @@ function AppNavigator() {
       <Stack.Screen name="LoginScreen" component={LoginScreen} />
       <Stack.Screen name="RegisterScreen" component={RegisterScreen} />
       <Stack.Screen name="HomeScreen" component={BottomTabNavigator} />
-      <Stack.Screen name="SearchParking" component={SearchParkingScreen} />
-      {/* <Stack.Screen name="TopUpScreen" component={TopUpScreen} /> */}
-      {/* <Stack.Screen
-      name="ParkingDetailScreen"
-      component={ParkingDetailScreen}
-    /> */}
     </Stack.Navigator>
   );
 }

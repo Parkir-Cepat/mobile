@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   StyleSheet,
   Text,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   FlatList,
   Dimensions,
+  Button,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -18,6 +19,7 @@ import * as Location from "expo-location";
 import { gql, useQuery } from "@apollo/client";
 import * as SecureStore from "expo-secure-store";
 import { LinearGradient } from "expo-linear-gradient";
+import { authContext } from "../context/authContext";
 
 const GET_USER_PROFILE = gql`
   query GetUserProfile {
@@ -96,6 +98,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [nearbyParking, setNearbyParking] = useState(DUMMY_NEARBY_PARKING);
   const [activeBookings, setActiveBookings] = useState(DUMMY_ACTIVE_BOOKINGS);
+  const { setIsSignIn } = useContext(authContext);
 
   // Get user profile data
   const { loading, error, data, refetch } = useQuery(GET_USER_PROFILE);
@@ -169,6 +172,16 @@ export default function HomeScreen() {
     navigation.navigate("ParkingDetailScreen", {
       parkingId,
       parkingData,
+    });
+  };
+
+  const handleLogout = async () => {
+    await SecureStore.deleteItemAsync("access_token");
+    await SecureStore.deleteItemAsync("user_role");
+    setIsSignIn(false);
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "LoginScreen" }],
     });
   };
 
@@ -321,6 +334,7 @@ export default function HomeScreen() {
                   <Text style={styles.viewDetailsText}>View Details</Text>
                   <Ionicons name="chevron-forward" size={16} color="#FE7A3A" />
                 </View>
+                <Text onPress={handleLogout}> LOGOUT</Text>
               </TouchableOpacity>
             ))}
 

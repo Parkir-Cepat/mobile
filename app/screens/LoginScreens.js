@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
 import {
   StyleSheet,
   Text,
@@ -59,7 +59,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const { setIsSignIn } = useState(authContext);
+  const { setIsSignIn } = useContext(authContext);
   const [loginGoogle] = useMutation(GOOGLE_LOGIN);
   const [loginUser] = useMutation(LOGIN_USER);
 
@@ -134,6 +134,7 @@ export default function LoginScreen() {
       });
 
       await SecureStore.setItemAsync("access_token", data.login.token);
+      await SecureStore.setItemAsync("user_role", data.login.user.role);
       setIsSignIn(true);
 
       setEmail("");
@@ -145,7 +146,11 @@ export default function LoginScreen() {
         {
           text: "OK",
           onPress: () => {
-            navigation.navigate("HomeScreen");
+            if (data.login.user.role === "user") {
+              navigation.navigate("HomeScreen");
+            } else if (data.login.user.role === "landowner") {
+              navigation.navigate("DashboardScreen");
+            }
           },
         },
       ]);

@@ -13,6 +13,7 @@ import SearchParkingScreen from "../screens/SearchParkingScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import * as SecureStore from "expo-secure-store";
 import TopUpScreen from "../screens/TopUpScreen";
+import OwnerNavigator from "./OwnerNavigator";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -97,19 +98,26 @@ const HomeNavigator = () => {
 
 function AppNavigator() {
   const [isSignIn, setIsSignIn] = useState(false);
+  const [role, setRole] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const checkAuthStatus = async () => {
+      const token = await SecureStore.getItemAsync("access_token");
+      const role = await SecureStore.getItemAsync("user_role");
+      if (token && role) {
+        setRole(role);
+        setIsSignIn(true);
+      }
+      setLoading(false);
+    };
     checkAuthStatus();
   }, []);
 
-  const checkAuthStatus = () => {
-    const token = SecureStore.getItemAsync("access_token");
-    if (token) {
-      setIsSignIn(true);
-    } else {
-      setIsSignIn(false);
-    }
-  };
+  if (loading) return null;
+
+  if (role === "user") return <BottomTabNavigator />;
+  if (role === "landowner") return <OwnerNavigator />;
 
   return isSignIn ? (
     <BottomTabNavigator />

@@ -1,16 +1,17 @@
 import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { ApolloProvider } from "@apollo/client";
 import client from "./config/appolo";
-import Navigators from "./navigators/Navigators";
-
+import AppNavigator from "./navigation/AppNavigator";
+import AuthProvider from "./context/authContext";
 
 export default function App() {
   return (
-    <ApolloProvider client={client}>
-      <NavigationContainer>
-        <Navigators />
-      </NavigationContainer>
-    </ApolloProvider>
+    <AuthProvider>
+      <ApolloProvider client={client}>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </ApolloProvider>
+    </AuthProvider>
   );
 }

@@ -20,6 +20,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import { makeRedirectUri } from "expo-auth-session";
 import { GOOGLE_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID } from "@env";
+import { authContext } from "../context/authContext";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -58,6 +59,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const { setIsSignIn } = useState(authContext);
   const [loginGoogle] = useMutation(GOOGLE_LOGIN);
   const [loginUser] = useMutation(LOGIN_USER);
 
@@ -132,6 +134,7 @@ export default function LoginScreen() {
       });
 
       await SecureStore.setItemAsync("access_token", data.login.token);
+      setIsSignIn(true);
 
       setEmail("");
       setPassword("");

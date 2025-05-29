@@ -18,36 +18,36 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 const ADD_USER = gql`
-  mutation Register($newUser: registerInput) {
-    register(newUser: $newUser) {
-      _id
-      email
-      name
-      role
-      amount
-      createdAt
-      updatedAt
+  mutation Register($input: RegisterInput!) {
+    register(input: $input) {
+      token
+      user {
+        email
+        name
+        role
+        saldo
+      }
     }
   }
 `;
 
 export default function RegisterScreen() {
+  const navigation = useNavigation();
   const scrollViewRef = useRef();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [saveUser, { data, loading, error }] = useMutation(ADD_USER);
-  const [input, setInput] = useState({
+  const [formData, setFormData] = useState({
     email: "",
     password: "",
     name: "",
     role: "",
-    amount: "",
   });
 
   const handleChange = (value, key) => {
-    setInput({
-      ...input,
+    setFormData({
+      ...formData,
       [key]: value,
     });
   };
@@ -59,21 +59,20 @@ export default function RegisterScreen() {
     try {
       await saveUser({
         variables: {
-          newUser: {
-            email: input.email,
-            password: input.password,
-            name: input.name,
-            role: input.role,
-            amount: parseFloat(input.amount),
+          input: {
+            email: formData.email,
+            password: formData.password,
+            name: formData.name,
+            role: formData.role,
           },
         },
       });
 
       Alert.alert("Success", "Account created successfully!");
-
-      setInput({ email: "", password: "", name: "", role: "", amount: "" });
-      setErrors({});
-      setShowPassword(false);
+      setFormData({ email: "", password: "", name: "", role: "" });
+      setTimeout(() => {
+        navigation.navigate("LoginScreen");
+      }, 1500);
     } catch (err) {
       const newErrors = {};
       if (err.graphQLErrors && err.graphQLErrors.length > 0) {
@@ -149,7 +148,7 @@ export default function RegisterScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Enter your full name"
-                value={input.name}
+                value={formData.name}
                 onChangeText={(value) => handleChange(value, "name")}
                 placeholderTextColor="#8A94A6"
               />
@@ -171,7 +170,7 @@ export default function RegisterScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Enter your email"
-                value={input.email}
+                value={formData.email}
                 onChangeText={(value) => handleChange(value, "email")}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -195,7 +194,7 @@ export default function RegisterScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Create a password"
-                value={input.password}
+                value={formData.password}
                 onChangeText={(value) => handleChange(value, "password")}
                 secureTextEntry={!showPassword}
                 placeholderTextColor="#8A94A6"
@@ -214,29 +213,6 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Initial Amount (Rp)</Text>
-            {errors.amount ? (
-              <Text style={styles.errorText}>{errors.amount}</Text>
-            ) : null}
-            <View style={styles.inputWrapper}>
-              <Ionicons
-                name="wallet-outline"
-                size={22}
-                color="#4B5EAA"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter initial amount"
-                value={input.amount}
-                onChangeText={(value) => handleChange(value, "amount")}
-                keyboardType="numeric"
-                placeholderTextColor="#8A94A6"
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Select Your Role</Text>
             {errors.role ? (
               <Text style={styles.errorText}>{errors.role}</Text>
@@ -245,17 +221,17 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={[
                   styles.roleOption,
-                  input.role === "seeker" && styles.roleOptionSelected,
+                  formData.role === "user" && styles.roleOptionSelected,
                 ]}
-                onPress={() => handleChange("seeker", "role")}
+                onPress={() => handleChange("user", "role")}
               >
                 <View style={styles.radioButton}>
-                  {input.role === "seeker" && (
+                  {formData.role === "user" && (
                     <View style={styles.radioButtonSelected} />
                   )}
                 </View>
                 <View style={styles.roleTextContainer}>
-                  <Text style={styles.roleTitle}>Seeker</Text>
+                  <Text style={styles.roleTitle}>User</Text>
                   <Text style={styles.roleDescription}>
                     Looking for parking spaces
                   </Text>
@@ -265,19 +241,19 @@ export default function RegisterScreen() {
               <TouchableOpacity
                 style={[
                   styles.roleOption,
-                  input.role === "owner" && styles.roleOptionSelected,
+                  formData.role === "landowner" && styles.roleOptionSelected,
                 ]}
-                onPress={() => handleChange("owner", "role")}
+                onPress={() => handleChange("landowner", "role")}
               >
                 <View style={styles.radioButton}>
-                  {input.role === "owner" && (
+                  {formData.role === "landowner" && (
                     <View style={styles.radioButtonSelected} />
                   )}
                 </View>
                 <View style={styles.roleTextContainer}>
-                  <Text style={styles.roleTitle}>Owner</Text>
+                  <Text style={styles.roleTitle}>Landowner</Text>
                   <Text style={styles.roleDescription}>
-                    Managing parking lots
+                    Parking lot manager
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -299,7 +275,13 @@ export default function RegisterScreen() {
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account?</Text>
             <TouchableOpacity>
-              <Text style={styles.loginLink}> Log In</Text>
+              <Text
+                onPress={() => navigation.navigate("LoginScreen")}
+                style={styles.loginLink}
+              >
+                {" "}
+                Log In
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -316,7 +298,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 25,
-    paddingTop: 50,
+    paddingTop: 80,
     paddingBottom: 100,
   },
   logoContainer: {

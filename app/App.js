@@ -1,22 +1,15 @@
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import RegisterScreen from "./screens/RegisterScreen";
 import { ApolloProvider } from "@apollo/client";
 import client from "./config/appolo";
+import Navigators from "./navigators/Navigators";
 
-const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
     <ApolloProvider client={client}>
       <NavigationContainer>
-        <Stack.Navigator>
-          <Stack.Screen
-            name="RegisterScreen"
-            component={RegisterScreen}
-            options={{ headerShown: false }}
-          />
-        </Stack.Navigator>
+        <Navigators />
       </NavigationContainer>
     </ApolloProvider>
   );

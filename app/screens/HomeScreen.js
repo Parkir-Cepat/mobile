@@ -179,10 +179,6 @@ export default function HomeScreen() {
     await SecureStore.deleteItemAsync("access_token");
     await SecureStore.deleteItemAsync("user_role");
     setIsSignIn(false);
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "LoginScreen" }],
-    });
   };
 
   return (

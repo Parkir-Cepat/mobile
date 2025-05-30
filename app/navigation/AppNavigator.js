@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,6 +14,7 @@ import RegisterScreen from "../screens/RegisterScreen";
 import * as SecureStore from "expo-secure-store";
 import TopUpScreen from "../screens/TopUpScreen";
 import OwnerNavigator from "./OwnerNavigator";
+import { authContext } from "../context/authContext";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -97,17 +98,19 @@ const HomeNavigator = () => {
 };
 
 function AppNavigator() {
-  const [isSignIn, setIsSignIn] = useState(false);
-  const [role, setRole] = useState(null);
+  const { isSignIn, setIsSignIn, role, setRole } = useContext(authContext);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const checkAuthStatus = async () => {
       const token = await SecureStore.getItemAsync("access_token");
-      const role = await SecureStore.getItemAsync("user_role");
-      if (token && role) {
-        setRole(role);
+      const savedRole = await SecureStore.getItemAsync("user_role");
+      if (token && savedRole) {
+        setRole(savedRole);
         setIsSignIn(true);
+      } else {
+        setIsSignIn(false);
+        setRole(null);
       }
       setLoading(false);
     };
@@ -116,21 +119,19 @@ function AppNavigator() {
 
   if (loading) return null;
 
+  if (!isSignIn) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="LoginScreen" component={LoginScreen} />
+        <Stack.Screen name="RegisterScreen" component={RegisterScreen} />
+      </Stack.Navigator>
+    );
+  }
+
   if (role === "user") return <BottomTabNavigator />;
   if (role === "landowner") return <OwnerNavigator />;
 
-  return isSignIn ? (
-    <BottomTabNavigator />
-  ) : (
-    <Stack.Navigator
-      initialRouteName="LoginScreen"
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="LoginScreen" component={LoginScreen} />
-      <Stack.Screen name="RegisterScreen" component={RegisterScreen} />
-      <Stack.Screen name="HomeScreen" component={BottomTabNavigator} />
-    </Stack.Navigator>
-  );
+  return <LoginScreen />;
 }
 
 export default AppNavigator;

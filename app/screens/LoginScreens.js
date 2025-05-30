@@ -29,6 +29,7 @@ const LOGIN_USER = gql`
     login(input: $input) {
       token
       user {
+        _id
         email
         name
         role
@@ -59,7 +60,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const { setIsSignIn } = useContext(authContext);
+  const { setIsSignIn, setRole } = useContext(authContext);
   const [loginGoogle] = useMutation(GOOGLE_LOGIN);
   const [loginUser] = useMutation(LOGIN_USER);
 
@@ -135,6 +136,11 @@ export default function LoginScreen() {
 
       await SecureStore.setItemAsync("access_token", data.login.token);
       await SecureStore.setItemAsync("user_role", data.login.user.role);
+      await SecureStore.setItemAsync(
+        "user_data",
+        JSON.stringify(data.login.user)
+      );
+      setRole(data.login.user.role);
       setIsSignIn(true);
 
       setEmail("");
@@ -145,13 +151,6 @@ export default function LoginScreen() {
       Alert.alert("Success", "Login successful!", [
         {
           text: "OK",
-          onPress: () => {
-            if (data.login.user.role === "user") {
-              navigation.navigate("HomeScreen");
-            } else if (data.login.user.role === "landowner") {
-              navigation.navigate("DashboardScreen");
-            }
-          },
         },
       ]);
     } catch (err) {

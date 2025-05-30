@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use, useContext } from "react";
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+import { gql, useQuery } from "@apollo/client";
+import { authContext } from "../context/authContext";
+import * as SecureStore from "expo-secure-store";
 
 // Dummy data untuk owner
 const OWNER_DATA = {
@@ -27,59 +30,90 @@ const OWNER_DATA = {
   rating: 4.8,
 };
 
+const GET_ALL_PARKING = gql`
+  query GetAllParking {
+    getAllParking {
+      id
+      name
+      address
+      location {
+        type
+        coordinates
+      }
+      status
+      rating
+      capacity {
+        car
+        motorcycle
+      }
+      available {
+        car
+        motorcycle
+      }
+      rates {
+        car
+        motorcycle
+      }
+      facilities
+      images
+    }
+  }
+`;
+
 // Dummy data untuk lahan parkir
-const DUMMY_LANDS = [
-  {
-    id: "1",
-    name: "Central Business District Parking",
-    address: "Jl. Sudirman No. 123, Jakarta",
-    totalSpots: 25,
-    availableSpots: 10,
-    hourlyRate: 15000,
-    income: 2150000,
-    rating: 4.7,
-    image: "https://images.unsplash.com/photo-1470224114660-3f6686c562eb?w=600",
-    status: "active",
-    transactions: 145,
-    lastUpdated: "2023-11-15T10:30:00",
-  },
-  {
-    id: "2",
-    name: "Mall Parking Area",
-    address: "Jl. Thamrin No. 45, Jakarta",
-    totalSpots: 15,
-    availableSpots: 5,
-    hourlyRate: 10000,
-    income: 850000,
-    rating: 4.5,
-    image: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600",
-    status: "active",
-    transactions: 85,
-    lastUpdated: "2023-11-14T08:45:00",
-  },
-  {
-    id: "3",
-    name: "Office Complex Parking",
-    address: "Jl. Gatot Subroto No. 72, Jakarta",
-    totalSpots: 8,
-    availableSpots: 0,
-    hourlyRate: 12000,
-    income: 250000,
-    rating: 4.3,
-    image: "https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?w=600",
-    status: "inactive",
-    transactions: 32,
-    lastUpdated: "2023-11-10T14:20:00",
-  },
-];
+// const DUMMY_LANDS = [
+//   {
+//     id: "1",
+//     name: "Central Business District Parking",
+//     address: "Jl. Sudirman No. 123, Jakarta",
+//     totalSpots: 25,
+//     availableSpots: 10,
+//     hourlyRate: 15000,
+//     income: 2150000,
+//     rating: 4.7,
+//     image: "https://images.unsplash.com/photo-1470224114660-3f6686c562eb?w=600",
+//     status: "active",
+//     transactions: 145,
+//     lastUpdated: "2023-11-15T10:30:00",
+//   },
+//   {
+//     id: "2",
+//     name: "Mall Parking Area",
+//     address: "Jl. Thamrin No. 45, Jakarta",
+//     totalSpots: 15,
+//     availableSpots: 5,
+//     hourlyRate: 10000,
+//     income: 850000,
+//     rating: 4.5,
+//     image: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600",
+//     status: "active",
+//     transactions: 85,
+//     lastUpdated: "2023-11-14T08:45:00",
+//   },
+//   {
+//     id: "3",
+//     name: "Office Complex Parking",
+//     address: "Jl. Gatot Subroto No. 72, Jakarta",
+//     totalSpots: 8,
+//     availableSpots: 0,
+//     hourlyRate: 12000,
+//     income: 250000,
+//     rating: 4.3,
+//     image: "https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?w=600",
+//     status: "inactive",
+//     transactions: 32,
+//     lastUpdated: "2023-11-10T14:20:00",
+//   },
+// ];
 
 export default function LandOwnerDashboard() {
   const navigation = useNavigation();
-  const [lands, setLands] = useState(DUMMY_LANDS);
+  const { setIsSignIn } = useContext(authContext);
   const [refreshing, setRefreshing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLand, setSelectedLand] = useState(null);
   const [statsView, setStatsView] = useState("income"); // 'income' or 'traffic'
+  const { data, loading, error } = useQuery(GET_ALL_PARKING);
 
   useEffect(() => {
     // This would be replaced with an actual API call
@@ -100,11 +134,11 @@ export default function LandOwnerDashboard() {
   };
 
   const confirmDelete = () => {
-    const updatedLands = lands.filter((land) => land.id !== selectedLand.id);
-    setLands(updatedLands);
-    setShowDeleteConfirm(false);
-    Alert.alert("Success", `"${selectedLand.name}" has been deleted`);
-    setSelectedLand(null);
+    // const updatedLands = lands.filter((land) => land.id !== selectedLand.id);
+    // setLands(updatedLands);
+    // setShowDeleteConfirm(false);
+    // Alert.alert("Success", `"${selectedLand.name}" has been deleted`);
+    // setSelectedLand(null);
   };
 
   const handleAddNewLand = () => {
@@ -112,11 +146,11 @@ export default function LandOwnerDashboard() {
   };
 
   const handleEditLand = (land) => {
-    navigation.navigate("EditLandScreen", { landId: land.id });
+    // navigation.navigate("EditLandScreen", { landId: land.id });
   };
 
   const handleViewDetails = (land) => {
-    navigation.navigate("LandDetailScreen", { landId: land.id });
+    // navigation.navigate("LandDetailScreen", { landId: land.id });
   };
 
   const formatCurrency = (amount) => {
@@ -124,103 +158,122 @@ export default function LandOwnerDashboard() {
   };
 
   const getTotalIncome = () => {
-    return lands.reduce((sum, land) => sum + land.income, 0);
+    // return lands.reduce((sum, land) => sum + land.income, 0);
   };
 
   const getTotalTransactions = () => {
-    return lands.reduce((sum, land) => sum + land.transactions, 0);
+    // return lands.reduce((sum, land) => sum + land.transactions, 0);
   };
 
-  const renderLandItem = ({ item }) => (
-    <View style={styles.landCard}>
-      <TouchableOpacity
-        style={styles.landCardInner}
-        onPress={() => handleViewDetails(item)}
-        activeOpacity={0.7}
-      >
-        <Image
-          source={{ uri: item.image }}
-          style={styles.landImage}
-          defaultSource={require("../assets/logo.png")}
-        />
+  const handleLogout = async () => {
+    try {
+      await SecureStore.deleteItemAsync("access_token");
+      await SecureStore.deleteItemAsync("user_role");
+      await SecureStore.deleteItemAsync("user_data");
+      setIsSignIn(false);
+    } catch (error) {
+      console.log("Logout error:", error);
+    }
+  };
 
-        <View
-          style={[
-            styles.statusBadge,
-            item.status === "active"
-              ? styles.activeBadge
-              : styles.inactiveBadge,
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {item.status === "active" ? "Active" : "Inactive"}
-          </Text>
-        </View>
+  const renderLandItem = ({ item }) => {
+    const imageUrl = item.images?.[0] || "https://via.placeholder.com/150";
+    const availableSpots = item.available?.car ?? 0;
+    const totalSpots = item.capacity?.car ?? 0;
+    const hourlyRate = item.rates?.car ?? 0;
 
-        <View style={styles.landContent}>
-          <Text style={styles.landName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.landAddress} numberOfLines={1}>
-            {item.address}
-          </Text>
-
-          <View style={styles.landStats}>
-            <View style={styles.landStat}>
-              <Ionicons name="car-outline" size={14} color="#4B5563" />
-              <Text style={styles.landStatText}>
-                {item.availableSpots}/{item.totalSpots} spots
-              </Text>
-            </View>
-            <View style={styles.landStat}>
-              <Ionicons name="cash-outline" size={14} color="#4B5563" />
-              <Text style={styles.landStatText}>
-                {formatCurrency(item.hourlyRate)}/h
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.landFooter}>
-            <View style={styles.ratingContainer}>
-              <Ionicons name="star" size={14} color="#F59E0B" />
-              <Text style={styles.ratingText}>{item.rating}</Text>
-            </View>
-
-            <Text style={styles.incomeText}>{formatCurrency(item.income)}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-
-      {/* Memindahkan action buttons ke bagian bawah card */}
-      <View style={styles.cardFooter}>
+    return (
+      <View style={styles.landCard}>
         <TouchableOpacity
-          style={styles.detailsButton}
+          style={styles.landCardInner}
           onPress={() => handleViewDetails(item)}
+          activeOpacity={0.7}
         >
-          <Ionicons name="eye-outline" size={14} color="#4B5563" />
-          <Text style={styles.detailsButtonText}>Details</Text>
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.landImage}
+            defaultSource={require("../assets/logo.png")}
+          />
+
+          <View
+            style={[
+              styles.statusBadge,
+              item.status === "active"
+                ? styles.activeBadge
+                : styles.inactiveBadge,
+            ]}
+          >
+            <Text style={styles.statusText}>
+              {item.status === "active" ? "Active" : "Inactive"}
+            </Text>
+          </View>
+
+          <View style={styles.landContent}>
+            <Text style={styles.landName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.landAddress} numberOfLines={1}>
+              {item.address}
+            </Text>
+
+            <View style={styles.landStats}>
+              <View style={styles.landStat}>
+                <Ionicons name="car-outline" size={14} color="#4B5563" />
+                <Text style={styles.landStatText}>
+                  {availableSpots}/{totalSpots} spots
+                </Text>
+              </View>
+              <View style={styles.landStat}>
+                <Ionicons name="cash-outline" size={14} color="#4B5563" />
+                <Text style={styles.landStatText}>
+                  {formatCurrency(hourlyRate)}/h
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.landFooter}>
+              <View style={styles.ratingContainer}>
+                <Ionicons name="star" size={14} color="#F59E0B" />
+                <Text style={styles.ratingText}>{item.rating ?? "-"}</Text>
+              </View>
+
+              <Text style={styles.incomeText}>
+                {formatCurrency(item.income ?? 0)}
+              </Text>
+            </View>
+          </View>
         </TouchableOpacity>
 
-        <View style={styles.actionButtonsContainer}>
+        <View style={styles.cardFooter}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.editButton]}
-            onPress={() => handleEditLand(item)}
+            style={styles.detailsButton}
+            onPress={() => handleViewDetails(item)}
           >
-            <Ionicons name="create-outline" size={16} color="#FFF" />
-            <Text style={styles.actionButtonText}>Edit</Text>
+            <Ionicons name="eye-outline" size={14} color="#4B5563" />
+            <Text style={styles.detailsButtonText}>Details</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
-            onPress={() => handleDeleteLand(item)}
-          >
-            <Ionicons name="trash-outline" size={16} color="#FFF" />
-            <Text style={styles.actionButtonText}>Delete</Text>
-          </TouchableOpacity>
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.editButton]}
+              onPress={() => handleEditLand(item)}
+            >
+              <Ionicons name="create-outline" size={16} color="#FFF" />
+              <Text style={styles.actionButtonText}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.deleteButton]}
+              onPress={() => handleDeleteLand(item)}
+            >
+              <Ionicons name="trash-outline" size={16} color="#FFF" />
+              <Text style={styles.actionButtonText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -327,9 +380,9 @@ export default function LandOwnerDashboard() {
                   >
                     <Ionicons name="cash-outline" size={24} color="#FE7A3A" />
                   </View>
-                  <Text style={styles.statsValue}>
+                  {/* <Text style={styles.statsValue}>
                     {formatCurrency(getTotalIncome())}
-                  </Text>
+                  </Text> */}
                   <Text style={styles.statsLabel}>Total Income</Text>
                 </View>
 
@@ -383,11 +436,12 @@ export default function LandOwnerDashboard() {
         <View style={styles.landsSection}>
           <View style={styles.landsSectionHeader}>
             <Text style={styles.sectionTitle}>My Parking Lands</Text>
-            <Text style={styles.landCount}>{lands.length} lands</Text>
+            <Text onPress={handleLogout}>Logout</Text>
+            {/* <Text style={styles.landCount}>{data.getParking.length} lands</Text> */}
           </View>
 
           <FlatList
-            data={lands}
+            data={data?.getAllParking || []}
             keyExtractor={(item) => item.id}
             renderItem={renderLandItem}
             scrollEnabled={false}

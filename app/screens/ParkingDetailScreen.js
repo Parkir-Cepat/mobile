@@ -13,6 +13,7 @@ import {
   Dimensions,
   Linking,
   Platform,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -66,14 +67,59 @@ const GET_PARKING_DETAIL = gql`
   }
 `;
 
+const GET_PARKING_STATS = gql`
+  query GetParkingStats($parkingId: ID!) {
+    getParkingStats(parkingId: $parkingId) {
+      parkingId
+      parkingName
+      totalRevenue
+      totalBookings
+      averageRating
+      currentOccupancyRate
+      dailyStats {
+        date
+        revenue
+        bookings
+        occupancyRate
+      }
+      monthlyStats {
+        month
+        revenue
+        bookings
+        averageOccupancy
+      }
+      vehicleDistribution {
+        car
+        motorcycle
+        carPercentage
+        motorcyclePercentage
+      }
+      peakHours
+      bestDay
+      worstDay
+    }
+  }
+`;
+
 export default function ParkingDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { parkingId, parkingName } = route.params;
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   const { data, loading, error, refetch } = useQuery(GET_PARKING_DETAIL, {
     variables: { getParkingId: parkingId },
+    fetchPolicy: "cache-and-network",
+  });
+
+  const {
+    data: statsData,
+    loading: statsLoading,
+    error: statsError,
+  } = useQuery(GET_PARKING_STATS, {
+    variables: { parkingId: parkingId },
+    skip: !showStatsModal,
     fetchPolicy: "cache-and-network",
   });
 
@@ -84,6 +130,23 @@ export default function ParkingDetailScreen() {
   const formatTime = (time) => {
     if (!time) return "-";
     return time.substring(0, 5); // Format HH:MM
+  };
+
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+    });
+  };
+
+  const formatMonth = (monthStr) => {
+    const [year, month] = monthStr.split("-");
+    const date = new Date(year, month - 1);
+    return date.toLocaleDateString("id-ID", {
+      month: "short",
+      year: "numeric",
+    });
   };
 
   if (loading) {
@@ -235,6 +298,268 @@ export default function ParkingDetailScreen() {
     } else {
       Alert.alert("Error", "Location coordinates not available");
     }
+  };
+
+  const renderStatsModal = () => {
+    const stats = statsData?.getParkingStats;
+
+    return (
+      <Modal
+        visible={showStatsModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowStatsModal(false)}
+      >
+        <SafeAreaView style={styles.statsModalContainer}>
+          {/* Stats Modal Header */}
+          <View style={styles.statsModalHeader}>
+            <Text style={styles.statsModalTitle}>Parking Statistics</Text>
+            <TouchableOpacity
+              style={styles.closeModalButton}
+              onPress={() => setShowStatsModal(false)}
+            >
+              <Ionicons name="close" size={24} color="#1E3A8A" />
+            </TouchableOpacity>
+          </View>
+
+          {statsLoading ? (
+            <View style={styles.statsLoadingContainer}>
+              <ActivityIndicator size="large" color="#FE7A3A" />
+              <Text style={styles.loadingText}>Loading statistics...</Text>
+            </View>
+          ) : statsError ? (
+            <View style={styles.statsErrorContainer}>
+              <Ionicons name="alert-circle-outline" size={60} color="#EF4444" />
+              <Text style={styles.errorTitle}>Error Loading Stats</Text>
+              <Text style={styles.errorMessage}>{statsError.message}</Text>
+            </View>
+          ) : stats ? (
+            <ScrollView
+              style={styles.statsContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Overview Stats */}
+              <View style={styles.statsOverviewSection}>
+                <Text style={styles.statsSectionTitle}>Overview</Text>
+                <View style={styles.statsOverviewCards}>
+                  <View
+                    style={[styles.statsCard, { backgroundColor: "#FFF5F0" }]}
+                  >
+                    <View
+                      style={[
+                        styles.statsIconBg,
+                        { backgroundColor: "#FDDED3" },
+                      ]}
+                    >
+                      <Ionicons name="cash-outline" size={24} color="#FE7A3A" />
+                    </View>
+                    <Text style={styles.statsValue}>
+                      {formatCurrency(stats.totalRevenue)}
+                    </Text>
+                    <Text style={styles.statsLabel}>Total Revenue</Text>
+                  </View>
+
+                  <View
+                    style={[styles.statsCard, { backgroundColor: "#EDF5FF" }]}
+                  >
+                    <View
+                      style={[
+                        styles.statsIconBg,
+                        { backgroundColor: "#D7E8FF" },
+                      ]}
+                    >
+                      <Ionicons name="car-outline" size={24} color="#3B82F6" />
+                    </View>
+                    <Text style={styles.statsValue}>{stats.totalBookings}</Text>
+                    <Text style={styles.statsLabel}>Total Bookings</Text>
+                  </View>
+
+                  <View
+                    style={[styles.statsCard, { backgroundColor: "#F0FFF4" }]}
+                  >
+                    <View
+                      style={[
+                        styles.statsIconBg,
+                        { backgroundColor: "#DBFDE6" },
+                      ]}
+                    >
+                      <Ionicons
+                        name="speedometer-outline"
+                        size={24}
+                        color="#059669"
+                      />
+                    </View>
+                    <Text style={styles.statsValue}>
+                      {stats.currentOccupancyRate}%
+                    </Text>
+                    <Text style={styles.statsLabel}>Occupancy Rate</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Vehicle Distribution */}
+              <View style={styles.statsSection}>
+                <Text style={styles.statsSectionTitle}>
+                  Vehicle Distribution
+                </Text>
+                <View style={styles.vehicleDistributionCard}>
+                  <View style={styles.vehicleDistributionRow}>
+                    <View style={styles.vehicleDistributionItem}>
+                      <Ionicons name="car-outline" size={20} color="#3B82F6" />
+                      <Text style={styles.vehicleLabel}>Cars</Text>
+                      <Text style={styles.vehicleCount}>
+                        {stats.vehicleDistribution.car}
+                      </Text>
+                      <Text style={styles.vehiclePercentage}>
+                        {stats.vehicleDistribution.carPercentage.toFixed(1)}%
+                      </Text>
+                    </View>
+                    <View style={styles.vehicleDistributionItem}>
+                      <Ionicons
+                        name="bicycle-outline"
+                        size={20}
+                        color="#059669"
+                      />
+                      <Text style={styles.vehicleLabel}>Motorcycles</Text>
+                      <Text style={styles.vehicleCount}>
+                        {stats.vehicleDistribution.motorcycle}
+                      </Text>
+                      <Text style={styles.vehiclePercentage}>
+                        {stats.vehicleDistribution.motorcyclePercentage.toFixed(
+                          1
+                        )}
+                        %
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Peak Hours */}
+              {stats.peakHours && stats.peakHours.length > 0 && (
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>Peak Hours</Text>
+                  <View style={styles.peakHoursCard}>
+                    <View style={styles.peakHoursList}>
+                      {stats.peakHours.map((hour, index) => (
+                        <View key={index} style={styles.peakHourItem}>
+                          <Ionicons
+                            name="time-outline"
+                            size={16}
+                            color="#FE7A3A"
+                          />
+                          <Text style={styles.peakHourText}>
+                            {hour.toString().padStart(2, "0")}:00
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Daily Stats */}
+              {stats.dailyStats && stats.dailyStats.length > 0 && (
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>
+                    Daily Stats (Last 7 Days)
+                  </Text>
+                  <View style={styles.dailyStatsCard}>
+                    {stats.dailyStats.map((day, index) => (
+                      <View key={index} style={styles.dailyStatItem}>
+                        <Text style={styles.dailyStatDate}>
+                          {formatDate(day.date)}
+                        </Text>
+                        <Text style={styles.dailyStatRevenue}>
+                          {formatCurrency(day.revenue)}
+                        </Text>
+                        <Text style={styles.dailyStatBookings}>
+                          {day.bookings} bookings
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Monthly Stats */}
+              {stats.monthlyStats && stats.monthlyStats.length > 0 && (
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>Monthly Stats</Text>
+                  <View style={styles.monthlyStatsCard}>
+                    {stats.monthlyStats.map((month, index) => (
+                      <View key={index} style={styles.monthlyStatItem}>
+                        <Text style={styles.monthlyStatMonth}>
+                          {formatMonth(month.month)}
+                        </Text>
+                        <Text style={styles.monthlyStatRevenue}>
+                          {formatCurrency(month.revenue)}
+                        </Text>
+                        <Text style={styles.monthlyStatBookings}>
+                          {month.bookings} bookings
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Best/Worst Days */}
+              {(stats.bestDay || stats.worstDay) && (
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>Performance</Text>
+                  <View style={styles.performanceCards}>
+                    {stats.bestDay && (
+                      <View
+                        style={[
+                          styles.performanceCard,
+                          { backgroundColor: "#F0FDF4" },
+                        ]}
+                      >
+                        <Ionicons
+                          name="trending-up-outline"
+                          size={20}
+                          color="#059669"
+                        />
+                        <Text style={styles.performanceLabel}>Best Day</Text>
+                        <Text style={styles.performanceValue}>
+                          {formatDate(stats.bestDay)}
+                        </Text>
+                      </View>
+                    )}
+                    {stats.worstDay && (
+                      <View
+                        style={[
+                          styles.performanceCard,
+                          { backgroundColor: "#FEF2F2" },
+                        ]}
+                      >
+                        <Ionicons
+                          name="trending-down-outline"
+                          size={20}
+                          color="#EF4444"
+                        />
+                        <Text style={styles.performanceLabel}>Lowest Day</Text>
+                        <Text style={styles.performanceValue}>
+                          {formatDate(stats.worstDay)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          ) : (
+            <View style={styles.statsErrorContainer}>
+              <Text style={styles.errorTitle}>No Statistics Available</Text>
+              <Text style={styles.errorMessage}>
+                Statistics data is not available for this parking.
+              </Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
+    );
   };
 
   return (
@@ -511,11 +836,17 @@ export default function ParkingDetailScreen() {
           <Ionicons name="create-outline" size={20} color="#FFF" />
           <Text style={styles.editActionText}>Edit Parking</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.viewStatsButton}>
+        <TouchableOpacity
+          style={styles.viewStatsButton}
+          onPress={() => setShowStatsModal(true)}
+        >
           <Ionicons name="stats-chart-outline" size={20} color="#FE7A3A" />
           <Text style={styles.viewStatsText}>View Stats</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Stats Modal */}
+      {renderStatsModal()}
     </SafeAreaView>
   );
 }
@@ -956,5 +1287,257 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+
+  // Stats Modal Styles
+  statsModalContainer: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  statsModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  statsModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1E3A8A",
+  },
+  closeModalButton: {
+    padding: 8,
+  },
+  statsLoadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statsErrorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  statsContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  statsOverviewSection: {
+    marginTop: 20,
+    marginBottom: 25,
+  },
+  statsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1E3A8A",
+    marginBottom: 15,
+  },
+  statsOverviewCards: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  statsCard: {
+    width: "31%",
+    borderRadius: 12,
+    padding: 15,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statsIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  statsValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1E293B",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  statsLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  statsSection: {
+    marginBottom: 25,
+  },
+  vehicleDistributionCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  vehicleDistributionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  vehicleDistributionItem: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 10,
+  },
+  vehicleLabel: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  vehicleCount: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1E3A8A",
+    marginBottom: 2,
+  },
+  vehiclePercentage: {
+    fontSize: 12,
+    color: "#059669",
+    fontWeight: "600",
+  },
+  peakHoursCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  peakHoursList: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  peakHourItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF5F0",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  peakHourText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FE7A3A",
+    marginLeft: 4,
+  },
+  dailyStatsCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  dailyStatItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  dailyStatDate: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E3A8A",
+    flex: 1,
+  },
+  dailyStatRevenue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#059669",
+    flex: 1,
+    textAlign: "center",
+  },
+  dailyStatBookings: {
+    fontSize: 12,
+    color: "#6B7280",
+    flex: 1,
+    textAlign: "right",
+  },
+  monthlyStatsCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  monthlyStatItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  monthlyStatMonth: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E3A8A",
+    flex: 1,
+  },
+  monthlyStatRevenue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#059669",
+    flex: 1,
+    textAlign: "center",
+  },
+  monthlyStatBookings: {
+    fontSize: 12,
+    color: "#6B7280",
+    flex: 1,
+    textAlign: "right",
+  },
+  performanceCards: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  performanceCard: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 15,
+    alignItems: "center",
+    marginHorizontal: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  performanceLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  performanceValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E3A8A",
   },
 });

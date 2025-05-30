@@ -410,6 +410,16 @@ export default function LandOwnerDashboard() {
     );
   };
 
+  // Function to get initials from name
+  const getInitials = (name) => {
+    if (!name) return "?";
+    const words = name.trim().split(" ");
+    if (words.length === 1) {
+      return words[0].charAt(0).toUpperCase();
+    }
+    return words[0].charAt(0).toUpperCase() + words[1].charAt(0).toUpperCase();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -423,10 +433,11 @@ export default function LandOwnerDashboard() {
       >
         <View style={styles.profileSection}>
           <View style={styles.profileLeft}>
-            <Image
-              source={{ uri: OWNER_DATA.profilePic }}
-              style={styles.profilePic}
-            />
+            <View style={styles.profilePic}>
+              <Text style={styles.initialsText}>
+                {getInitials(ownerData?.name)}
+              </Text>
+            </View>
             <View>
               <Text style={styles.greeting}>Hello,</Text>
               <Text style={styles.ownerName}>{ownerData?.name}</Text>
@@ -689,6 +700,14 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 2,
     borderColor: "#FFFFFF",
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  initialsText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FE7A3A",
   },
   greeting: {
     fontSize: 14,

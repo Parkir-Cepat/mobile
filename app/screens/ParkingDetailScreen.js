@@ -252,7 +252,12 @@ export default function ParkingDetailScreen() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {parking.name}
         </Text>
-        <TouchableOpacity style={styles.editButton}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() =>
+            navigation.navigate("EditParkingScreen", { parkingId: parking._id })
+          }
+        >
           <Ionicons name="create-outline" size={24} color="#1E3A8A" />
         </TouchableOpacity>
       </View>
@@ -497,7 +502,12 @@ export default function ParkingDetailScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.editActionButton}>
+        <TouchableOpacity
+          style={styles.editActionButton}
+          onPress={() =>
+            navigation.navigate("EditParkingScreen", { parkingId: parking._id })
+          }
+        >
           <Ionicons name="create-outline" size={20} color="#FFF" />
           <Text style={styles.editActionText}>Edit Parking</Text>
         </TouchableOpacity>

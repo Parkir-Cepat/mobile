@@ -26,11 +26,19 @@ import * as SecureStore from "expo-secure-store";
 const OWNER_DATA = {
   name: "John Doe",
   profilePic: "https://randomuser.me/api/portraits/men/32.jpg",
-  balance: 3250000,
-  totalParkingSpots: 48,
-  totalTransactions: 320,
-  rating: 4.8,
 };
+
+const GET_OWNER_STATS = gql`
+  query GetOwnerStats {
+    getOwnerStats {
+      totalBalance
+      currentBalance
+      totalIncome
+      totalBookings
+      averageRating
+    }
+  }
+`;
 
 const GET_ALL_PARKING = gql`
   query GetMyParkings {
@@ -90,7 +98,13 @@ export default function LandOwnerDashboard() {
   const [selectedLand, setSelectedLand] = useState(null);
   const [statsView, setStatsView] = useState("income");
   const [ownerData, setOwnerData] = useState(null);
+
   const { data, loading, error, refetch } = useQuery(GET_ALL_PARKING);
+  const {
+    data: statsData,
+    loading: statsLoading,
+    refetch: refetchStats,
+  } = useQuery(GET_OWNER_STATS);
 
   // Mutation untuk delete parking
   const [deleteParking, { loading: deleteLoading }] = useMutation(
@@ -151,7 +165,7 @@ export default function LandOwnerDashboard() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await refetch();
+      await Promise.all([refetch(), refetchStats()]);
     } catch (error) {
       console.error("Error refreshing data:", error);
     } finally {
@@ -184,19 +198,20 @@ export default function LandOwnerDashboard() {
   };
 
   const handleEditLand = (land) => {
-    // navigation.navigate("EditLandScreen", { landId: land.id });
+    navigation.navigate("EditParkingScreen", { parkingId: land._id });
   };
 
   const formatCurrency = (amount) => {
     return `Rp ${amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
   };
 
-  const getTotalIncome = () => {
-    // return lands.reduce((sum, land) => sum + land.income, 0);
-  };
-
-  const getTotalTransactions = () => {
-    // return lands.reduce((sum, land) => sum + land.transactions, 0);
+  // Get stats from query instead of dummy data
+  const stats = statsData?.getOwnerStats || {
+    totalBalance: 0,
+    currentBalance: 0,
+    totalIncome: 0,
+    totalBookings: 0,
+    averageRating: 0,
   };
 
   const handleLogout = async () => {
@@ -431,7 +446,9 @@ export default function LandOwnerDashboard() {
           <View>
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>
-              {formatCurrency(OWNER_DATA.balance)}
+              {statsLoading
+                ? "Loading..."
+                : formatCurrency(stats.currentBalance)}
             </Text>
           </View>
           <TouchableOpacity style={styles.withdrawButton}>
@@ -500,9 +517,11 @@ export default function LandOwnerDashboard() {
                   >
                     <Ionicons name="cash-outline" size={24} color="#FE7A3A" />
                   </View>
-                  {/* <Text style={styles.statsValue}>
-                    {formatCurrency(getTotalIncome())}
-                  </Text> */}
+                  <Text style={styles.statsValue}>
+                    {statsLoading
+                      ? "Loading..."
+                      : formatCurrency(stats.totalIncome)}
+                  </Text>
                   <Text style={styles.statsLabel}>Total Income</Text>
                 </View>
 
@@ -515,7 +534,9 @@ export default function LandOwnerDashboard() {
                     <Ionicons name="card-outline" size={24} color="#1E3A8A" />
                   </View>
                   <Text style={styles.statsValue}>
-                    {formatCurrency(OWNER_DATA.balance)}
+                    {statsLoading
+                      ? "Loading..."
+                      : formatCurrency(stats.currentBalance)}
                   </Text>
                   <Text style={styles.statsLabel}>Current Balance</Text>
                 </View>
@@ -531,7 +552,7 @@ export default function LandOwnerDashboard() {
                     <Ionicons name="car-outline" size={24} color="#2563EB" />
                   </View>
                   <Text style={styles.statsValue}>
-                    {getTotalTransactions()}
+                    {statsLoading ? "Loading..." : stats.totalBookings}
                   </Text>
                   <Text style={styles.statsLabel}>Total Bookings</Text>
                 </View>
@@ -544,7 +565,9 @@ export default function LandOwnerDashboard() {
                   >
                     <Ionicons name="star-outline" size={24} color="#059669" />
                   </View>
-                  <Text style={styles.statsValue}>{OWNER_DATA.rating}</Text>
+                  <Text style={styles.statsValue}>
+                    {statsLoading ? "Loading..." : stats.averageRating}
+                  </Text>
                   <Text style={styles.statsLabel}>Average Rating</Text>
                 </View>
               </>

@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AddNewLandScreen from "../screens/AddNewLandScreen";
 import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import LandOwnerDashboard from "../screens/LandOwnerDashboard";
+import EditParkingScreen from "../screens/EditParkingScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -21,6 +22,11 @@ export default function OwnerNavigator() {
       <Stack.Screen
         name="AddNewLandScreen"
         component={AddNewLandScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="EditParkingScreen"
+        component={EditParkingScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

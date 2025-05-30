@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, useContext } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,11 +12,12 @@ import {
   Modal,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
-import { gql, useQuery } from "@apollo/client";
+import { gql, useQuery, useMutation } from "@apollo/client";
 import { authContext } from "../context/authContext";
 import * as SecureStore from "expo-secure-store";
 
@@ -31,17 +32,23 @@ const OWNER_DATA = {
 };
 
 const GET_ALL_PARKING = gql`
-  query GetAllParking {
-    getAllParking {
-      id
+  query GetMyParkings {
+    getMyParkings {
+      _id
       name
       address
       location {
         type
         coordinates
       }
-      status
-      rating
+      owner_id
+      owner {
+        _id
+        email
+        name
+        role
+        saldo
+      }
       capacity {
         car
         motorcycle
@@ -54,57 +61,25 @@ const GET_ALL_PARKING = gql`
         car
         motorcycle
       }
+      operational_hours {
+        open
+        close
+      }
       facilities
       images
+      status
+      rating
+      review_count
     }
   }
 `;
 
-// Dummy data untuk lahan parkir
-// const DUMMY_LANDS = [
-//   {
-//     id: "1",
-//     name: "Central Business District Parking",
-//     address: "Jl. Sudirman No. 123, Jakarta",
-//     totalSpots: 25,
-//     availableSpots: 10,
-//     hourlyRate: 15000,
-//     income: 2150000,
-//     rating: 4.7,
-//     image: "https://images.unsplash.com/photo-1470224114660-3f6686c562eb?w=600",
-//     status: "active",
-//     transactions: 145,
-//     lastUpdated: "2023-11-15T10:30:00",
-//   },
-//   {
-//     id: "2",
-//     name: "Mall Parking Area",
-//     address: "Jl. Thamrin No. 45, Jakarta",
-//     totalSpots: 15,
-//     availableSpots: 5,
-//     hourlyRate: 10000,
-//     income: 850000,
-//     rating: 4.5,
-//     image: "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?w=600",
-//     status: "active",
-//     transactions: 85,
-//     lastUpdated: "2023-11-14T08:45:00",
-//   },
-//   {
-//     id: "3",
-//     name: "Office Complex Parking",
-//     address: "Jl. Gatot Subroto No. 72, Jakarta",
-//     totalSpots: 8,
-//     availableSpots: 0,
-//     hourlyRate: 12000,
-//     income: 250000,
-//     rating: 4.3,
-//     image: "https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?w=600",
-//     status: "inactive",
-//     transactions: 32,
-//     lastUpdated: "2023-11-10T14:20:00",
-//   },
-// ];
+// Mutation untuk menghapus parking
+const DELETE_PARKING = gql`
+  mutation DeleteParking($deleteParkingId: ID!) {
+    deleteParking(id: $deleteParkingId)
+  }
+`;
 
 export default function LandOwnerDashboard() {
   const navigation = useNavigation();
@@ -112,20 +87,75 @@ export default function LandOwnerDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLand, setSelectedLand] = useState(null);
-  const [statsView, setStatsView] = useState("income"); // 'income' or 'traffic'
-  const { data, loading, error } = useQuery(GET_ALL_PARKING);
+  const [statsView, setStatsView] = useState("income");
+  const [ownerData, setOwnerData] = useState(null);
+  const { data, loading, error, refetch } = useQuery(GET_ALL_PARKING);
+
+  // Mutation untuk delete parking
+  const [deleteParking, { loading: deleteLoading }] = useMutation(
+    DELETE_PARKING,
+    {
+      update(cache, { data: deletedData }) {
+        try {
+          // Update cache setelah delete berhasil
+          const existingData = cache.readQuery({ query: GET_ALL_PARKING });
+          if (existingData && existingData.getMyParkings) {
+            const updatedParkings = existingData.getMyParkings.filter(
+              (parking) => parking._id !== selectedLand?._id
+            );
+
+            cache.writeQuery({
+              query: GET_ALL_PARKING,
+              data: {
+                getMyParkings: updatedParkings,
+              },
+            });
+          }
+        } catch (error) {
+          console.error("Cache update error:", error);
+          // Jika cache update gagal, fallback ke refetch
+          refetch();
+        }
+      },
+      onCompleted: (data) => {
+        console.log("Delete completed:", data);
+        Alert.alert(
+          "Success",
+          `"${selectedLand?.name}" has been deleted successfully`
+        );
+        setSelectedLand(null);
+        setShowDeleteConfirm(false);
+        // Pastikan data terbaru dengan refetch setelah delete berhasil
+        refetch();
+      },
+      onError: (error) => {
+        console.error("Delete error details:", error);
+        Alert.alert("Error", `Failed to delete parking: ${error.message}`);
+        setShowDeleteConfirm(false);
+      },
+    }
+  );
 
   useEffect(() => {
-    // This would be replaced with an actual API call
-    // to fetch land owner data and their parking lands
+    const fetchOwnerData = async () => {
+      const ownerData = await SecureStore.getItemAsync("user_data");
+      if (ownerData) {
+        const parsedData = JSON.parse(ownerData);
+        setOwnerData(parsedData);
+      }
+    };
+    fetchOwnerData();
   }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // This would typically be an API call to refresh data
-    setTimeout(() => {
+    try {
+      await refetch();
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
       setRefreshing(false);
-    }, 2000);
+    }
   };
 
   const handleDeleteLand = (land) => {
@@ -134,11 +164,18 @@ export default function LandOwnerDashboard() {
   };
 
   const confirmDelete = () => {
-    // const updatedLands = lands.filter((land) => land.id !== selectedLand.id);
-    // setLands(updatedLands);
-    // setShowDeleteConfirm(false);
-    // Alert.alert("Success", `"${selectedLand.name}" has been deleted`);
-    // setSelectedLand(null);
+    if (!selectedLand) return;
+
+    console.log("Deleting parking with ID:", selectedLand._id);
+    console.log("Selected land data:", selectedLand);
+
+    deleteParking({
+      variables: { deleteParkingId: selectedLand._id },
+      // Tambahkan refetchQueries untuk memastikan data terbaru
+      refetchQueries: [{ query: GET_ALL_PARKING }],
+      // Tambahkan awaitRefetchQueries untuk menunggu refetch selesai
+      awaitRefetchQueries: true,
+    });
   };
 
   const handleAddNewLand = () => {
@@ -150,7 +187,10 @@ export default function LandOwnerDashboard() {
   };
 
   const handleViewDetails = (land) => {
-    // navigation.navigate("LandDetailScreen", { landId: land.id });
+    navigation.navigate("ParkingDetailScreen", {
+      parkingId: land._id,
+      parkingName: land.name,
+    });
   };
 
   const formatCurrency = (amount) => {
@@ -265,9 +305,16 @@ export default function LandOwnerDashboard() {
             <TouchableOpacity
               style={[styles.actionButton, styles.deleteButton]}
               onPress={() => handleDeleteLand(item)}
+              disabled={deleteLoading}
             >
-              <Ionicons name="trash-outline" size={16} color="#FFF" />
-              <Text style={styles.actionButtonText}>Delete</Text>
+              {deleteLoading && selectedLand?._id === item._id ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={16} color="#FFF" />
+                  <Text style={styles.actionButtonText}>Delete</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -294,7 +341,7 @@ export default function LandOwnerDashboard() {
             />
             <View>
               <Text style={styles.greeting}>Hello,</Text>
-              <Text style={styles.ownerName}>{OWNER_DATA.name}</Text>
+              <Text style={styles.ownerName}>{ownerData?.name}</Text>
               <View style={styles.roleBadge}>
                 <Ionicons name="business-outline" size={12} color="#FFF" />
                 <Text style={styles.roleText}>Land Owner</Text>
@@ -437,12 +484,14 @@ export default function LandOwnerDashboard() {
           <View style={styles.landsSectionHeader}>
             <Text style={styles.sectionTitle}>My Parking Lands</Text>
             <Text onPress={handleLogout}>Logout</Text>
-            {/* <Text style={styles.landCount}>{data.getParking.length} lands</Text> */}
+            <Text style={styles.landCount}>
+              {data?.getMyParkings?.length || 0} lands
+            </Text>
           </View>
 
           <FlatList
-            data={data?.getAllParking || []}
-            keyExtractor={(item) => item.id}
+            data={data?.getMyParkings || []}
+            keyExtractor={(item) => item._id}
             renderItem={renderLandItem}
             scrollEnabled={false}
             contentContainerStyle={styles.landsList}
@@ -486,6 +535,7 @@ export default function LandOwnerDashboard() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setShowDeleteConfirm(false)}
+                disabled={deleteLoading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -493,8 +543,13 @@ export default function LandOwnerDashboard() {
               <TouchableOpacity
                 style={[styles.modalButton, styles.deleteConfirmButton]}
                 onPress={confirmDelete}
+                disabled={deleteLoading}
               >
-                <Text style={styles.deleteConfirmText}>Delete</Text>
+                {deleteLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.deleteConfirmText}>Delete</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

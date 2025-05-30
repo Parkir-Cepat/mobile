@@ -22,12 +22,72 @@ import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { gql, useMutation } from "@apollo/client";
 
-// This would normally be a real mutation
-const ADD_PARKING_MUTATION = gql`
-  mutation AddParking($input: ParkingInput!) {
-    addParking(input: $input) {
-      id
+const CREATE_PARKING_MUTATION = gql`
+  mutation createParking($input: CreateParkingInput!) {
+    createParking(input: $input) {
+      _id
       name
+      address
+      location {
+        coordinates
+      }
+      capacity {
+        car
+        motorcycle
+      }
+      rates {
+        car
+        motorcycle
+      }
+      operational_hours {
+        open
+        close
+      }
+      facilities
+      images
+    }
+  }
+`;
+
+const GET_ALL_PARKING = gql`
+  query GetMyParkings {
+    getMyParkings {
+      _id
+      name
+      address
+      location {
+        type
+        coordinates
+      }
+      owner_id
+      owner {
+        _id
+        email
+        name
+        role
+        saldo
+      }
+      capacity {
+        car
+        motorcycle
+      }
+      available {
+        car
+        motorcycle
+      }
+      rates {
+        car
+        motorcycle
+      }
+      operational_hours {
+        open
+        close
+      }
+      facilities
+      images
+      status
+      rating
+      review_count
     }
   }
 `;
@@ -37,28 +97,87 @@ export default function AddNewLandScreen() {
 
   // Form state
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [images, setImages] = useState([]);
+  const [address, setAddress] = useState("");
+  const [images, setImages] = useState("");
   const [startHour, setStartHour] = useState(new Date());
   const [endHour, setEndHour] = useState(new Date());
   const [location, setLocation] = useState({
-    latitude: -6.2088, // Default to Jakarta
+    latitude: -6.2088,
     longitude: 106.8456,
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
   });
-  const [totalSlots, setTotalSlots] = useState("");
-  const [tariff, setTariff] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Capacity fields
+  const [carCapacity, setCarCapacity] = useState("");
+  const [motorcycleCapacity, setMotorcycleCapacity] = useState("");
+
+  // Rate fields
+  const [carRate, setCarRate] = useState("");
+  const [motorcycleRate, setMotorcycleRate] = useState("");
+
+  // Facilities
+  const [facilities, setFacilities] = useState("");
 
   // UI state
   const [errors, setErrors] = useState({});
   const [isStartTimePickerVisible, setStartTimePickerVisible] = useState(false);
   const [isEndTimePickerVisible, setEndTimePickerVisible] = useState(false);
   const [isMapModalVisible, setMapModalVisible] = useState(false);
+  const [mapAddress, setMapAddress] = useState("");
+  const [isGeocoding, setIsGeocoding] = useState(false);
 
-  // Mock mutation - would be replaced with actual Apollo mutation
-  const [addParking] = useMutation(ADD_PARKING_MUTATION);
+  // Apollo mutation
+  const [createParking, { loading: isLoading }] = useMutation(
+    CREATE_PARKING_MUTATION,
+    {
+      update(cache, { data }) {
+        try {
+          if (data && data.createParking) {
+            const existingData = cache.readQuery({ query: GET_ALL_PARKING });
+
+            if (existingData && existingData.getMyParkings) {
+              cache.writeQuery({
+                query: GET_ALL_PARKING,
+                data: {
+                  getMyParkings: [
+                    ...existingData.getMyParkings,
+                    {
+                      ...data.createParking,
+                      owner_id: null,
+                      owner: null,
+                      available: {
+                        car: data.createParking.capacity.car,
+                        motorcycle: data.createParking.capacity.motorcycle,
+                      },
+                      status: "active",
+                      rating: 0,
+                      review_count: 0,
+                    },
+                  ],
+                },
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Cache update error:", error);
+        }
+      },
+      onCompleted: (data) => {
+        console.log("Mutation completed successfully:", data);
+        Alert.alert("Success", "Parking land added successfully!", [
+          {
+            text: "OK",
+            onPress: () => navigation.navigate("DashboardScreen"),
+          },
+        ]);
+      },
+      onError: (error) => {
+        console.error("Mutation error:", error);
+        Alert.alert("Error", error.message || "Failed to add parking land");
+      },
+    }
+  );
 
   // Request permissions on component mount
   useEffect(() => {
@@ -74,6 +193,12 @@ export default function AddNewLandScreen() {
     })();
   }, []);
 
+  const formatTime24 = (date) => {
+    const hours = date.getHours().toString().padStart(2, "0");
+    const minutes = date.getMinutes().toString().padStart(2, "0");
+    return `${hours}:${minutes}`;
+  };
+
   const formatTime = (date) => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
@@ -88,8 +213,55 @@ export default function AddNewLandScreen() {
     setEndTimePickerVisible(false);
   };
 
+  // Geocoding function to convert address to coordinates
+  const geocodeAddress = async (addressText) => {
+    if (!addressText.trim()) {
+      Alert.alert("Error", "Please enter an address");
+      return;
+    }
+
+    setIsGeocoding(true);
+    try {
+      // Using a free geocoding service (you can replace with Google Geocoding API)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          addressText
+        )}&limit=1`
+      );
+
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        const result = data[0];
+        const newLocation = {
+          latitude: parseFloat(result.lat),
+          longitude: parseFloat(result.lon),
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        };
+
+        setLocation(newLocation);
+        Alert.alert("Success", "Address found and location updated!");
+      } else {
+        Alert.alert(
+          "Error",
+          "Address not found. Please try a different address or manually select on map."
+        );
+      }
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      Alert.alert(
+        "Error",
+        "Failed to find address. Please try again or select manually on map."
+      );
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
   const handleMapConfirm = () => {
     setMapModalVisible(false);
+    // Don't append coordinates to address, just close modal
   };
 
   const pickImage = async () => {
@@ -119,20 +291,40 @@ export default function AddNewLandScreen() {
     const newErrors = {};
 
     if (!name.trim()) newErrors.name = "Name is required";
-    if (!description.trim()) newErrors.description = "Description is required";
-    if (images.length === 0)
-      newErrors.images = "At least one image is required";
+    if (!address.trim()) newErrors.address = "Address is required";
+    if (!images.trim()) newErrors.images = "Image URL is required";
 
-    // Check if total_slots is a positive number
-    const totalSlotsNum = parseInt(totalSlots);
-    if (isNaN(totalSlotsNum) || totalSlotsNum <= 0) {
-      newErrors.totalSlots = "Total slots must be a positive number";
+    // Check car capacity
+    const carCapacityNum = parseInt(carCapacity);
+    if (isNaN(carCapacityNum) || carCapacityNum < 0) {
+      newErrors.carCapacity = "Car capacity must be a non-negative number";
     }
 
-    // Check if tariff is a positive number
-    const tariffNum = parseFloat(tariff);
-    if (isNaN(tariffNum) || tariffNum <= 0) {
-      newErrors.tariff = "Tariff must be a positive number";
+    // Check motorcycle capacity
+    const motorcycleCapacityNum = parseInt(motorcycleCapacity);
+    if (isNaN(motorcycleCapacityNum) || motorcycleCapacityNum < 0) {
+      newErrors.motorcycleCapacity =
+        "Motorcycle capacity must be a non-negative number";
+    }
+
+    // At least one capacity must be greater than 0
+    if (carCapacityNum === 0 && motorcycleCapacityNum === 0) {
+      newErrors.capacity = "At least one vehicle type must have capacity > 0";
+    }
+
+    // Check car rate
+    const carRateNum = parseFloat(carRate);
+    if (carCapacityNum > 0 && (isNaN(carRateNum) || carRateNum <= 0)) {
+      newErrors.carRate = "Car rate must be a positive number";
+    }
+
+    // Check motorcycle rate
+    const motorcycleRateNum = parseFloat(motorcycleRate);
+    if (
+      motorcycleCapacityNum > 0 &&
+      (isNaN(motorcycleRateNum) || motorcycleRateNum <= 0)
+    ) {
+      newErrors.motorcycleRate = "Motorcycle rate must be a positive number";
     }
 
     // Make sure end time is after start time
@@ -147,40 +339,50 @@ export default function AddNewLandScreen() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
-    setIsLoading(true);
-
     try {
-      // This would be replaced with actual image upload logic
-      const imageUrls = images; // Placeholder for real upload logic
+      // Format facilities array
+      const facilitiesArray = facilities
+        .split(",")
+        .map((f) => f.trim())
+        .filter((f) => f.length > 0);
+
+      // Format images as array
+      const imagesArray = images
+        .split(",")
+        .map((img) => img.trim())
+        .filter((img) => img.length > 0);
 
       // Format the input for the GraphQL mutation
       const input = {
-        name,
-        description,
-        images: imageUrls,
-        operationalHoursStart: formatTime(startHour),
-        operationalHoursEnd: formatTime(endHour),
+        name: name.trim(),
+        address: address.trim(),
         location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
+          coordinates: [location.longitude, location.latitude], // Remove type field, just send coordinates
         },
-        totalSlots: parseInt(totalSlots),
-        availableSlots: parseInt(totalSlots), // Initially all spots are available
-        tariff: parseFloat(tariff),
+        capacity: {
+          car: parseInt(carCapacity) || 0,
+          motorcycle: parseInt(motorcycleCapacity) || 0,
+        },
+        rates: {
+          car: parseFloat(carRate) || 0,
+          motorcycle: parseFloat(motorcycleRate) || 0,
+        },
+        operational_hours: {
+          open: formatTime24(startHour),
+          close: formatTime24(endHour),
+        },
+        facilities: facilitiesArray,
+        images: imagesArray,
       };
 
-      // For now, let's just simulate an API call
-      setTimeout(() => {
-        // This would be the real mutation call
-        // await addParking({ variables: { input } });
+      console.log("Submitting parking data:", input);
 
-        setIsLoading(false);
-        Alert.alert("Success", "Parking land added successfully!", [
-          { text: "OK", onPress: () => navigation.goBack() },
-        ]);
-      }, 2000);
+      await createParking({
+        variables: { input },
+        refetchQueries: [{ query: GET_ALL_PARKING }],
+      });
     } catch (error) {
-      setIsLoading(false);
+      console.error("Submit error:", error);
       Alert.alert("Error", error.message || "Failed to add parking land");
     }
   };
@@ -218,7 +420,7 @@ export default function AddNewLandScreen() {
         >
           {/* Name Field */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Name</Text>
+            <Text style={styles.label}>Parking Name</Text>
             <TextInput
               style={[styles.input, errors.name && styles.inputError]}
               placeholder="Enter parking name"
@@ -228,54 +430,42 @@ export default function AddNewLandScreen() {
             {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
           </View>
 
-          {/* Description Field */}
+          {/* Address Field */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description</Text>
+            <Text style={styles.label}>Address</Text>
             <TextInput
               style={[
                 styles.input,
                 styles.textArea,
-                errors.description && styles.inputError,
+                errors.address && styles.inputError,
               ]}
-              placeholder="Enter description"
-              value={description}
-              onChangeText={setDescription}
+              placeholder="Enter complete address"
+              value={address}
+              onChangeText={setAddress}
               multiline
-              numberOfLines={4}
+              numberOfLines={3}
               textAlignVertical="top"
             />
-            {errors.description && (
-              <Text style={styles.errorText}>{errors.description}</Text>
+            {errors.address && (
+              <Text style={styles.errorText}>{errors.address}</Text>
             )}
           </View>
 
           {/* Images Field */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Images (Max 5)</Text>
-            <View style={styles.imagesContainer}>
-              {images.map((img, index) => (
-                <View key={index} style={styles.imageWrapper}>
-                  <Image source={{ uri: img }} style={styles.imageThumbnail} />
-                  <TouchableOpacity
-                    style={styles.removeImageBtn}
-                    onPress={() => removeImage(index)}
-                  >
-                    <Ionicons name="close-circle" size={22} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-              <TouchableOpacity
-                style={[
-                  styles.addImageBtn,
-                  images.length >= 5 && styles.disabledBtn,
-                ]}
-                onPress={pickImage}
-                disabled={images.length >= 5}
-              >
-                <Ionicons name="add" size={40} color="#9CA3AF" />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.label}>Images URL</Text>
+            <TextInput
+              style={[styles.input, errors.images && styles.inputError]}
+              placeholder="Enter image URLs separated by commas"
+              value={images}
+              onChangeText={setImages}
+              multiline
+              numberOfLines={2}
+              textAlignVertical="top"
+            />
+            <Text style={styles.helperText}>
+              Separate multiple image URLs with commas
+            </Text>
             {errors.images && (
               <Text style={styles.errorText}>{errors.images}</Text>
             )}
@@ -379,39 +569,116 @@ export default function AddNewLandScreen() {
             </View>
           </View>
 
-          {/* Total Slots Field */}
+          {/* Capacity Section */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Total Parking Slots</Text>
-            <TextInput
-              style={[styles.input, errors.totalSlots && styles.inputError]}
-              placeholder="Enter total number of parking slots"
-              value={totalSlots}
-              onChangeText={setTotalSlots}
-              keyboardType="numeric"
-            />
-            {errors.totalSlots && (
-              <Text style={styles.errorText}>{errors.totalSlots}</Text>
+            <Text style={styles.label}>Vehicle Capacity</Text>
+
+            <View style={styles.capacityRow}>
+              <View style={styles.capacityField}>
+                <Text style={styles.subLabel}>Car Slots</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    errors.carCapacity && styles.inputError,
+                  ]}
+                  placeholder="0"
+                  value={carCapacity}
+                  onChangeText={setCarCapacity}
+                  keyboardType="numeric"
+                />
+                {errors.carCapacity && (
+                  <Text style={styles.errorText}>{errors.carCapacity}</Text>
+                )}
+              </View>
+
+              <View style={styles.capacityField}>
+                <Text style={styles.subLabel}>Motorcycle Slots</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    errors.motorcycleCapacity && styles.inputError,
+                  ]}
+                  placeholder="0"
+                  value={motorcycleCapacity}
+                  onChangeText={setMotorcycleCapacity}
+                  keyboardType="numeric"
+                />
+                {errors.motorcycleCapacity && (
+                  <Text style={styles.errorText}>
+                    {errors.motorcycleCapacity}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {errors.capacity && (
+              <Text style={styles.errorText}>{errors.capacity}</Text>
             )}
           </View>
 
-          {/* Tariff Field */}
+          {/* Rates Section */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Hourly Rate (Rp)</Text>
+            <Text style={styles.label}>Hourly Rates (Rp)</Text>
+
+            <View style={styles.capacityRow}>
+              <View style={styles.capacityField}>
+                <Text style={styles.subLabel}>Car Rate</Text>
+                <TextInput
+                  style={[styles.input, errors.carRate && styles.inputError]}
+                  placeholder="0"
+                  value={carRate}
+                  onChangeText={setCarRate}
+                  keyboardType="numeric"
+                  editable={parseInt(carCapacity) > 0}
+                />
+                {errors.carRate && (
+                  <Text style={styles.errorText}>{errors.carRate}</Text>
+                )}
+              </View>
+
+              <View style={styles.capacityField}>
+                <Text style={styles.subLabel}>Motorcycle Rate</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    errors.motorcycleRate && styles.inputError,
+                  ]}
+                  placeholder="0"
+                  value={motorcycleRate}
+                  onChangeText={setMotorcycleRate}
+                  keyboardType="numeric"
+                  editable={parseInt(motorcycleCapacity) > 0}
+                />
+                {errors.motorcycleRate && (
+                  <Text style={styles.errorText}>{errors.motorcycleRate}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* Facilities Field */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Facilities (Optional)</Text>
             <TextInput
-              style={[styles.input, errors.tariff && styles.inputError]}
-              placeholder="Enter hourly rate"
-              value={tariff}
-              onChangeText={setTariff}
-              keyboardType="numeric"
+              style={[styles.input, styles.textArea]}
+              placeholder="Enter facilities separated by commas (e.g., CCTV, Security, Toilet)"
+              value={facilities}
+              onChangeText={setFacilities}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
             />
-            {errors.tariff && (
-              <Text style={styles.errorText}>{errors.tariff}</Text>
-            )}
+            <Text style={styles.helperText}>
+              Separate multiple facilities with commas
+            </Text>
           </View>
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={styles.submitButton}
+            style={[
+              styles.submitButton,
+              isLoading && styles.submitButtonDisabled,
+            ]}
             onPress={handleSubmit}
             disabled={isLoading}
           >
@@ -454,11 +721,39 @@ export default function AddNewLandScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Address Input Section */}
+            <View style={styles.addressInputSection}>
+              <Text style={styles.addressInputLabel}>Enter Address:</Text>
+              <View style={styles.addressInputRow}>
+                <TextInput
+                  style={styles.addressInput}
+                  placeholder="Enter address to find location"
+                  value={mapAddress}
+                  onChangeText={setMapAddress}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.geocodeButton,
+                    isGeocoding && styles.geocodeButtonDisabled,
+                  ]}
+                  onPress={() => geocodeAddress(mapAddress)}
+                  disabled={isGeocoding}
+                >
+                  {isGeocoding ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Ionicons name="search" size={20} color="#FFF" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
             <View style={styles.modalBody}>
               <MapView
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
-                initialRegion={location}
+                region={location}
                 onRegionChangeComplete={setLocation}
               >
                 <Marker
@@ -477,13 +772,17 @@ export default function AddNewLandScreen() {
                 />
               </MapView>
 
-              <View style={styles.mapPin}>
-                <Ionicons name="location" size={40} color="#FE7A3A" />
+              <View style={styles.coordinatesDisplay}>
+                <Text style={styles.coordinatesText}>
+                  Coordinates: [{location.longitude.toFixed(6)},{" "}
+                  {location.latitude.toFixed(6)}]
+                </Text>
               </View>
 
               <View style={styles.mapHelperText}>
                 <Text style={styles.mapHelperTextContent}>
-                  Drag the map to position the marker at your parking location
+                  Enter address above or drag the map to position the marker at
+                  your parking location
                 </Text>
               </View>
             </View>
@@ -746,5 +1045,82 @@ const styles = StyleSheet.create({
   mapHelperTextContent: {
     color: "#FFFFFF",
     textAlign: "center",
+  },
+  capacityRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 15,
+  },
+  capacityField: {
+    flex: 1,
+  },
+  subLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B7280",
+    marginBottom: 6,
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 5,
+    fontStyle: "italic",
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  addressInputSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+  },
+  addressInputLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1E3A8A",
+    marginBottom: 8,
+  },
+  addressInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  addressInput: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    maxHeight: 80,
+  },
+  geocodeButton: {
+    backgroundColor: "#FE7A3A",
+    borderRadius: 8,
+    padding: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: 48,
+  },
+  geocodeButtonDisabled: {
+    opacity: 0.7,
+  },
+  coordinatesDisplay: {
+    position: "absolute",
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 8,
+    padding: 12,
+  },
+  coordinatesText: {
+    fontSize: 12,
+    color: "#374151",
+    textAlign: "center",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 });

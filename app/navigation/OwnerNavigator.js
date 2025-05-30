@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import DashboardScreen from "../screens/LandOwnerDashboard";
 import AddNewLandScreen from "../screens/AddNewLandScreen";
 import ParkingDetailScreen from "../screens/ParkingDetailScreen";
+import LandOwnerDashboard from "../screens/LandOwnerDashboard";
 
 const Stack = createNativeStackNavigator();
 
@@ -10,7 +10,7 @@ export default function OwnerNavigator() {
     <Stack.Navigator>
       <Stack.Screen
         name="DashboardScreen"
-        component={DashboardScreen}
+        component={LandOwnerDashboard}
         options={{ headerShown: false }}
       />
       <Stack.Screen

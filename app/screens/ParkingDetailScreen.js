@@ -11,11 +11,14 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
+  Linking,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useQuery } from "@apollo/client";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
 const { width } = Dimensions.get("window");
 
@@ -174,6 +177,66 @@ export default function ParkingDetailScreen() {
       ? parking.images
       : ["https://via.placeholder.com/400x200"];
 
+  // Extract coordinates from parking location
+  const coordinates = parking.location?.coordinates;
+  const mapRegion = coordinates
+    ? {
+        latitude: coordinates[1], // coordinates are [longitude, latitude]
+        longitude: coordinates[0],
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }
+    : null;
+
+  const openInMaps = () => {
+    if (coordinates) {
+      const lat = coordinates[1];
+      const lng = coordinates[0];
+
+      // Create multiple URL options for different map apps
+      const googleMapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+      const appleMapsUrl = `http://maps.apple.com/?q=${lat},${lng}`;
+      const googleMapsAppUrl = `comgooglemaps://?q=${lat},${lng}&center=${lat},${lng}&zoom=14`;
+
+      Alert.alert("Open in Maps", "Choose your preferred maps application:", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Google Maps",
+          onPress: async () => {
+            try {
+              // Try to open Google Maps app first
+              const canOpenGoogleMaps = await Linking.canOpenURL(
+                googleMapsAppUrl
+              );
+              if (canOpenGoogleMaps) {
+                await Linking.openURL(googleMapsAppUrl);
+              } else {
+                // Fallback to web version
+                await Linking.openURL(googleMapsUrl);
+              }
+            } catch (error) {
+              console.error("Error opening Google Maps:", error);
+              Alert.alert("Error", "Could not open Google Maps");
+            }
+          },
+        },
+        {
+          text: "Apple Maps",
+          onPress: async () => {
+            try {
+              await Linking.openURL(appleMapsUrl);
+            } catch (error) {
+              console.error("Error opening Apple Maps:", error);
+              Alert.alert("Error", "Could not open Apple Maps");
+            }
+          },
+        },
+      ]);
+    } else {
+      Alert.alert("Error", "Location coordinates not available");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -265,6 +328,62 @@ export default function ParkingDetailScreen() {
             <Ionicons name="location-outline" size={20} color="#6B7280" />
             <Text style={styles.address}>{parking.address}</Text>
           </View>
+
+          {/* Map Section */}
+          {mapRegion && (
+            <View style={styles.mapSection}>
+              <View style={styles.mapHeader}>
+                <Text style={styles.sectionTitle}>Location</Text>
+              </View>
+
+              <View style={styles.mapContainer}>
+                <MapView
+                  provider={PROVIDER_GOOGLE}
+                  style={styles.map}
+                  region={mapRegion}
+                  scrollEnabled={true}
+                  zoomEnabled={true}
+                  showsUserLocation={true}
+                  showsMyLocationButton={true}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: mapRegion.latitude,
+                      longitude: mapRegion.longitude,
+                    }}
+                    title={parking.name}
+                    description={parking.address}
+                  >
+                    <View style={styles.customMarker}>
+                      <Ionicons name="car" size={20} color="#FFF" />
+                    </View>
+                  </Marker>
+                </MapView>
+
+                <TouchableOpacity
+                  style={styles.mapOverlayButton}
+                  onPress={openInMaps}
+                >
+                  <Ionicons name="expand-outline" size={20} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.coordinatesInfo}>
+                <View style={styles.coordinateItem}>
+                  <Text style={styles.coordinateLabel}>Latitude</Text>
+                  <Text style={styles.coordinateValue}>
+                    {mapRegion.latitude.toFixed(6)}
+                  </Text>
+                </View>
+                <View style={styles.coordinateItem}>
+                  <Text style={styles.coordinateLabel}>Longitude</Text>
+                  <Text style={styles.coordinateValue}>
+                    {mapRegion.longitude.toFixed(6)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Owner Info */}
           {parking.owner && (
@@ -523,6 +642,86 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1E3A8A",
     marginBottom: 15,
+  },
+  mapSection: {
+    marginBottom: 25,
+  },
+  mapHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  directionsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF5F0",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FE7A3A",
+  },
+  directionsText: {
+    color: "#FE7A3A",
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  mapContainer: {
+    height: 200,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    position: "relative",
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  customMarker: {
+    backgroundColor: "#FE7A3A",
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#FFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  mapOverlayButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 8,
+    padding: 8,
+  },
+  coordinatesInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingHorizontal: 8,
+  },
+  coordinateItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  coordinateLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 2,
+  },
+  coordinateValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E3A8A",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   ownerSection: {
     marginBottom: 25,

@@ -13,6 +13,7 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -186,13 +187,6 @@ export default function LandOwnerDashboard() {
     // navigation.navigate("EditLandScreen", { landId: land.id });
   };
 
-  const handleViewDetails = (land) => {
-    navigation.navigate("ParkingDetailScreen", {
-      parkingId: land._id,
-      parkingName: land.name,
-    });
-  };
-
   const formatCurrency = (amount) => {
     return `Rp ${amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
   };
@@ -222,18 +216,93 @@ export default function LandOwnerDashboard() {
     const totalSpots = item.capacity?.car ?? 0;
     const hourlyRate = item.rates?.car ?? 0;
 
+    // Animation values
+    const scaleValue = new Animated.Value(1);
+    const imageScale = new Animated.Value(1);
+    const overlayOpacity = new Animated.Value(0);
+
+    const handlePressIn = () => {
+      Animated.parallel([
+        Animated.spring(scaleValue, {
+          toValue: 1.03,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.spring(imageScale, {
+          toValue: 1.1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(overlayOpacity, {
+          toValue: 0.3,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    const handlePressOut = () => {
+      Animated.parallel([
+        Animated.spring(scaleValue, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.spring(imageScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(overlayOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
     return (
-      <View style={styles.landCard}>
+      <Animated.View
+        style={[
+          styles.landCard,
+          {
+            transform: [{ scale: scaleValue }],
+          },
+        ]}
+      >
         <TouchableOpacity
           style={styles.landCardInner}
-          onPress={() => handleViewDetails(item)}
-          activeOpacity={0.7}
+          onPress={() =>
+            navigation.navigate("ParkingDetailsScreen", { parkingId: item._id })
+          }
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          activeOpacity={1}
         >
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.landImage}
-            defaultSource={require("../assets/logo.png")}
-          />
+          <View style={styles.imageContainer}>
+            <Animated.Image
+              source={{ uri: imageUrl }}
+              style={[
+                styles.landImage,
+                {
+                  transform: [{ scale: imageScale }],
+                },
+              ]}
+              defaultSource={require("../assets/logo.png")}
+            />
+            <Animated.View
+              style={[
+                styles.imageOverlay,
+                {
+                  opacity: overlayOpacity,
+                },
+              ]}
+            />
+          </View>
 
           <View
             style={[
@@ -287,7 +356,11 @@ export default function LandOwnerDashboard() {
         <View style={styles.cardFooter}>
           <TouchableOpacity
             style={styles.detailsButton}
-            onPress={() => handleViewDetails(item)}
+            onPress={() =>
+              navigation.navigate("ParkingDetailsScreen", {
+                parkingId: item._id,
+              })
+            }
           >
             <Ionicons name="eye-outline" size={14} color="#4B5563" />
             <Text style={styles.detailsButtonText}>Details</Text>
@@ -318,7 +391,7 @@ export default function LandOwnerDashboard() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -769,14 +842,30 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     overflow: "hidden",
+    transform: [{ scale: 1 }],
   },
   landCardInner: {
     flexDirection: "row",
   },
-  landImage: {
+  imageContainer: {
+    position: "relative",
     width: 100,
-    height: 100, // Sesuaikan tinggi gambar
+    height: 100,
+    overflow: "hidden",
     borderTopLeftRadius: 16,
+  },
+  landImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  imageOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#000000",
   },
   statusBadge: {
     position: "absolute",

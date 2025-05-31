@@ -21,6 +21,33 @@ import UserParkingDetailScreen from "../screens/UserParkingDetailScreen";
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+const HomeNavigator = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="HomeScreen"
+        component={HomeScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="TopUpScreen"
+        component={TopUpScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="UserParkingDetailScreen"
+        component={UserParkingDetailScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SearchParking"
+        component={SearchParkingScreen}
+        options={{ headerShown: false }}
+      />
+    </Stack.Navigator>
+  );
+};
+
 function BottomTabNavigator() {
   return (
     <Tab.Navigator
@@ -53,7 +80,7 @@ function BottomTabNavigator() {
       />
       <Tab.Screen
         name="Search"
-        component={SearchParkingScreen}
+        component={SearchNavigator}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="search-outline" size={size} color={color} />
@@ -82,17 +109,12 @@ function BottomTabNavigator() {
   );
 }
 
-const HomeNavigator = () => {
+const SearchNavigator = () => {
   return (
     <Stack.Navigator>
       <Stack.Screen
-        name="HomeScreen"
-        component={HomeScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="TopUpScreen"
-        component={TopUpScreen}
+        name="SearchParkingScreen"
+        component={SearchParkingScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

@@ -91,8 +91,8 @@ const DUMMY_ACTIVE_BOOKINGS = [
 // Test locations untuk simulator
 const TEST_LOCATIONS = {
   pematangsiantar: {
-    latitude: 3.11667,
-    longitude: 98.83333,
+    latitude: 3.007083,
+    longitude: 99.077,
     name: "Pematang Siantar",
   },
   medan: {

@@ -12,6 +12,7 @@ import {
   FlatList,
   Dimensions,
   Button,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -20,6 +21,8 @@ import { gql, useQuery } from "@apollo/client";
 import * as SecureStore from "expo-secure-store";
 import { LinearGradient } from "expo-linear-gradient";
 import { authContext } from "../context/authContext";
+import { StatusBar } from "expo-status-bar";
+import ParkingCard from "../components/ParkingCard";
 
 const GET_USER_PROFILE = gql`
   query GetUserProfile {
@@ -32,53 +35,47 @@ const GET_USER_PROFILE = gql`
   }
 `;
 
-// Dummy data untuk nearby parking spots
-const DUMMY_NEARBY_PARKING = [
-  {
-    id: "1",
-    name: "Grand Mall Parking",
-    address: "Jl. Raya Mall No. 123",
-    distance: 0.5,
-    availableSpots: 25,
-    pricePerHour: 10000,
-    rating: 4.5,
-    image:
-      "https://images.unsplash.com/photo-1545179605-1296651e9d43?q=80&w=400",
-  },
-  {
-    id: "2",
-    name: "Office Building Parking",
-    address: "Jl. Raya Kantor No. 456",
-    distance: 0.8,
-    availableSpots: 10,
-    pricePerHour: 8000,
-    rating: 4.2,
-    image:
-      "https://images.unsplash.com/photo-1470224114660-3f6686c562eb?q=80&w=400",
-  },
-  {
-    id: "3",
-    name: "Public Park Parking",
-    address: "Jl. Umum No. 789",
-    distance: 1.2,
-    availableSpots: 50,
-    pricePerHour: 5000,
-    rating: 3.8,
-    image:
-      "https://images.unsplash.com/photo-1506521781263-d8422e82f27a?q=80&w=400",
-  },
-  {
-    id: "4",
-    name: "Central Plaza Parking",
-    address: "Jl. Plaza Utama No. 15",
-    distance: 1.5,
-    availableSpots: 30,
-    pricePerHour: 12000,
-    rating: 4.7,
-    image:
-      "https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?q=80&w=400",
-  },
-];
+const GET_NEARBY_PARKINGS = gql`
+  query GetNearbyParkings($longitude: Float!, $latitude: Float!) {
+    getNearbyParkings(longitude: $longitude, latitude: $latitude) {
+      _id
+      name
+      address
+      location {
+        type
+        coordinates
+      }
+      owner_id
+      owner {
+        email
+        name
+        role
+        saldo
+      }
+      capacity {
+        car
+        motorcycle
+      }
+      available {
+        car
+        motorcycle
+      }
+      rates {
+        car
+        motorcycle
+      }
+      operational_hours {
+        open
+        close
+      }
+      facilities
+      images
+      status
+      rating
+      review_count
+    }
+  }
+`;
 
 // Dummy data untuk active bookings
 const DUMMY_ACTIVE_BOOKINGS = [
@@ -91,20 +88,93 @@ const DUMMY_ACTIVE_BOOKINGS = [
   },
 ];
 
+// Test locations untuk simulator
+const TEST_LOCATIONS = {
+  pematangsiantar: {
+    latitude: 3.11667,
+    longitude: 98.83333,
+    name: "Pematang Siantar",
+  },
+  medan: {
+    latitude: 3.0037934916848705,
+    longitude: 99.08367466181517,
+    name: "Medan",
+  },
+  jakarta: {
+    latitude: -6.2088,
+    longitude: 106.8456,
+    name: "Jakarta",
+  },
+  bandung: {
+    latitude: -6.9175,
+    longitude: 107.6191,
+    name: "Bandung",
+  },
+};
+
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [nearbyParking, setNearbyParking] = useState(DUMMY_NEARBY_PARKING);
   const [activeBookings, setActiveBookings] = useState(DUMMY_ACTIVE_BOOKINGS);
   const { setIsSignIn } = useContext(authContext);
+  const [userData, setUserData] = useState(null);
 
   // Get user profile data
   const { loading, error, data, refetch } = useQuery(GET_USER_PROFILE);
 
+  // Replace dummy data with real query
+  const {
+    data: nearbyData,
+    loading: nearbyLoading,
+    error: nearbyError,
+    refetch: refetchNearby,
+  } = useQuery(GET_NEARBY_PARKINGS, {
+    variables: {
+      longitude: location?.coords?.longitude || 0,
+      latitude: location?.coords?.latitude || 0,
+    },
+    skip: !location, // Skip query sampai location ready
+    errorPolicy: "all", // Show partial data even if there's an error
+    notifyOnNetworkStatusChange: true,
+    fetchPolicy: "cache-and-network", // Always fetch from network
+  });
+
   useEffect(() => {
     (async () => {
+      // Check if running on iOS simulator
+      const isIOSSimulator = Platform.OS === "ios" && __DEV__;
+
+      if (isIOSSimulator) {
+        // Use test location for iOS simulator - Update to Pematang Siantar
+        const testLocation = {
+          coords: {
+            latitude: TEST_LOCATIONS.pematangsiantar.latitude,
+            longitude: TEST_LOCATIONS.pematangsiantar.longitude,
+            accuracy: 5,
+            altitude: 0,
+            altitudeAccuracy: -1,
+            heading: -1,
+            speed: -1,
+          },
+          timestamp: Date.now(),
+        };
+
+        setLocation(testLocation);
+        console.log(
+          `Using test location (${TEST_LOCATIONS.pematangsiantar.name}) for iOS simulator:`,
+          testLocation
+        );
+        console.log(
+          "Location coordinates:",
+          testLocation.coords.latitude,
+          testLocation.coords.longitude
+        );
+        return;
+      }
+
+      // Regular location detection for physical devices
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         setErrorMsg("Permission to access location was denied");
@@ -112,19 +182,51 @@ export default function HomeScreen() {
       }
 
       try {
-        let location = await Location.getCurrentPositionAsync({});
-        setLocation(location);
+        let currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeout: 15000,
+          maximumAge: 10000,
+        });
+        setLocation(currentLocation);
+        console.log("Current location:", currentLocation);
       } catch (error) {
         setErrorMsg("Error getting location");
-        console.error(error);
+        console.error("Location error:", error);
+
+        // Fallback to last known location
+        try {
+          let lastKnownLocation = await Location.getLastKnownPositionAsync();
+          if (lastKnownLocation) {
+            setLocation(lastKnownLocation);
+            console.log("Using last known location:", lastKnownLocation);
+          }
+        } catch (fallbackError) {
+          console.error("Fallback location error:", fallbackError);
+        }
       }
     })();
   }, []);
 
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      const userDataName = await SecureStore.getItemAsync("user_data");
+      if (userDataName) {
+        const parsedData = JSON.parse(userDataName);
+        setUserData(parsedData);
+      }
+    };
+    fetchUserProfile();
+  }, []);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await Promise.all([refetch(), refetchNearby()]);
+    } catch (error) {
+      console.error("Refresh error:", error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleSearchParking = () => {
@@ -168,10 +270,14 @@ export default function HomeScreen() {
   };
 
   const handleParkingDetail = (parkingId) => {
-    const parkingData = nearbyParking.find((spot) => spot.id === parkingId);
-    navigation.navigate("ParkingDetailScreen", {
+    navigation.navigate("UserParkingDetailScreen", {
       parkingId,
-      parkingData,
+      userLocation: location
+        ? {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          }
+        : null,
     });
   };
 
@@ -181,8 +287,98 @@ export default function HomeScreen() {
     setIsSignIn(false);
   };
 
+  // Calculate distance between two coordinates
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+    return distance;
+  };
+
+  // Format distance for display
+  const formatDistance = (distance) => {
+    if (distance < 1) {
+      return `${Math.round(distance * 1000)}m`;
+    }
+    return `${distance.toFixed(1)}km`;
+  };
+
+  // Remove dummy data and use real data
+  const nearbyParking = nearbyData?.getNearbyParkings || [];
+  console.log("Final nearbyParking array:", nearbyParking);
+
+  // Add distance calculation to nearby parking data
+  const nearbyParkingWithDistance = nearbyParking.map((parking) => {
+    let calculatedDistance = 0;
+    if (location && parking.location?.coordinates) {
+      calculatedDistance = calculateDistance(
+        location.coords.latitude,
+        location.coords.longitude,
+        parking.location.coordinates[1], // latitude
+        parking.location.coordinates[0] // longitude
+      );
+    }
+    return {
+      ...parking,
+      calculatedDistance,
+    };
+  });
+
+  // Debug nearby data
+  useEffect(() => {
+    if (nearbyData) {
+      console.log("Nearby parking data received:", nearbyData);
+      console.log(
+        "Number of parkings found:",
+        nearbyData.getNearbyParkings?.length || 0
+      );
+      nearbyData.getNearbyParkings?.forEach((parking, index) => {
+        console.log(`Parking ${index + 1}:`, {
+          id: parking._id,
+          name: parking.name,
+          address: parking.address,
+          coordinates: parking.location?.coordinates,
+        });
+      });
+    }
+  }, [nearbyData]);
+
+  useEffect(() => {
+    if (nearbyError) {
+      console.error("Nearby parking error:", nearbyError);
+      console.error("GraphQL Error details:", nearbyError.graphQLErrors);
+      console.error("Network Error details:", nearbyError.networkError);
+    }
+  }, [nearbyError]);
+
+  useEffect(() => {
+    if (location) {
+      console.log("Location changed, will trigger query:", location.coords);
+      console.log("Query variables will be:", {
+        longitude: location.coords.longitude,
+        latitude: location.coords.latitude,
+        maxDistance: 50000,
+        limit: 10,
+      });
+    }
+  }, [location]);
+
+  // Debug loading state
+  useEffect(() => {
+    console.log("Nearby loading state:", nearbyLoading);
+  }, [nearbyLoading]);
+
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -200,12 +396,7 @@ export default function HomeScreen() {
           <View style={styles.header}>
             <View>
               <Text style={styles.greeting}>
-                Hello,{" "}
-                {loading
-                  ? "..."
-                  : error
-                  ? "User"
-                  : data?.getUserProfile?.name || "User"}
+                Hello, {userData ? userData.name : "User"}!
               </Text>
               <Text style={styles.tagline}>
                 Find available parking near you
@@ -353,59 +544,84 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <FlatList
-            data={nearbyParking}
-            keyExtractor={(item) => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.nearbyParkingList}
-            renderItem={({ item }) => (
+          {/* Location Status */}
+          {!location && (
+            <View style={styles.locationContainer}>
+              <ActivityIndicator size="small" color="#FE7A3A" />
+              <Text style={styles.locationText}>Getting your location...</Text>
+            </View>
+          )}
+
+          {errorMsg && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          )}
+
+          {nearbyLoading && location && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#FE7A3A" />
+              <Text style={styles.loadingText}>Finding nearby parking...</Text>
+            </View>
+          )}
+
+          {nearbyError && !nearbyLoading && (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
+              <Text style={styles.errorText}>
+                Failed to load nearby parking.
+              </Text>
+              <Text style={styles.debugText}>Error: {nearbyError.message}</Text>
               <TouchableOpacity
-                style={styles.parkingCard}
-                onPress={() => handleParkingDetail(item.id)}
+                style={styles.retryButton}
+                onPress={() => {
+                  console.log("Retry button pressed");
+                  refetchNearby();
+                }}
               >
-                <Image
-                  source={{ uri: item.image }}
-                  style={styles.parkingImage}
-                  defaultSource={require("../assets/logo.png")}
-                />
-                <View style={styles.parkingCardContent}>
-                  <Text style={styles.parkingCardName}>{item.name}</Text>
-                  <Text style={styles.parkingCardAddress} numberOfLines={1}>
-                    {item.address}
-                  </Text>
-                  <View style={styles.parkingCardDetails}>
-                    <View style={styles.parkingCardDetail}>
-                      <Ionicons
-                        name="location-outline"
-                        size={14}
-                        color="#6B7280"
-                      />
-                      <Text style={styles.parkingCardDetailText}>
-                        {item.distance} km
-                      </Text>
-                    </View>
-                    <View style={styles.parkingCardDetail}>
-                      <Ionicons name="car-outline" size={14} color="#6B7280" />
-                      <Text style={styles.parkingCardDetailText}>
-                        {item.availableSpots} spots
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.parkingCardPrice}>
-                    <Text style={styles.parkingCardPriceValue}>
-                      Rp {item.pricePerHour.toLocaleString()}
-                    </Text>
-                    <Text style={styles.parkingCardPriceUnit}>/hour</Text>
-                  </View>
-                </View>
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={12} color="#FFF" />
-                  <Text style={styles.ratingText}>{item.rating}</Text>
-                </View>
+                <Text style={styles.retryButtonText}>Try Again</Text>
               </TouchableOpacity>
+            </View>
+          )}
+
+          {!nearbyLoading &&
+            !nearbyError &&
+            location &&
+            nearbyParkingWithDistance.length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="car-outline" size={60} color="#D1D5DB" />
+                <Text style={styles.emptyTitle}>No Parking Found</Text>
+                <Text style={styles.emptySubtitle}>
+                  No parking spaces available within 50km of your location
+                </Text>
+                <Text style={styles.debugText}>
+                  Search coords: {location.coords.latitude.toFixed(4)},{" "}
+                  {location.coords.longitude.toFixed(4)}
+                </Text>
+              </View>
             )}
-          />
+
+          {!nearbyLoading &&
+            !nearbyError &&
+            nearbyParkingWithDistance.length > 0 && (
+              <FlatList
+                data={nearbyParkingWithDistance}
+                keyExtractor={(item) => item._id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.nearbyParkingList}
+                renderItem={({ item }) => {
+                  console.log("Rendering parking card:", item.name);
+                  return (
+                    <ParkingCard
+                      item={item}
+                      onPress={() => handleParkingDetail(item._id)}
+                      formatDistance={formatDistance}
+                    />
+                  );
+                }}
+              />
+            )}
         </View>
 
         {/* Quick Actions */}
@@ -748,5 +964,87 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
     marginLeft: 8,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#6B7280",
+  },
+  errorContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#EF4444",
+    textAlign: "center",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 15,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    marginTop: 5,
+    textAlign: "center",
+  },
+  nearBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "#10B981",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  nearBadgeText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  locationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+  },
+  locationText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: "#6B7280",
+  },
+  retryButton: {
+    backgroundColor: "#FE7A3A",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  retryButtonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  debugContainer: {
+    backgroundColor: "#F3F4F6",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontFamily: "monospace",
   },
 });

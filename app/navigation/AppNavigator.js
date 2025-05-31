@@ -15,6 +15,8 @@ import * as SecureStore from "expo-secure-store";
 import TopUpScreen from "../screens/TopUpScreen";
 import OwnerNavigator from "./OwnerNavigator";
 import { authContext } from "../context/authContext";
+import ParkingDetailScreen from "../screens/ParkingDetailScreen";
+import UserParkingDetailScreen from "../screens/UserParkingDetailScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -91,6 +93,11 @@ const HomeNavigator = () => {
       <Stack.Screen
         name="TopUpScreen"
         component={TopUpScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="UserParkingDetailScreen"
+        component={UserParkingDetailScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

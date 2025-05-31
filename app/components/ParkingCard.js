@@ -12,6 +12,35 @@ import { Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
 
+// Function to check if parking is currently open
+const isParkingOpen = (operationalHours) => {
+  if (!operationalHours?.open || !operationalHours?.close) {
+    return false; // Default to closed if no hours specified
+  }
+
+  const now = new Date();
+  const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
+
+  // Parse open time
+  const [openHour, openMinute] = operationalHours.open.split(":").map(Number);
+  const openTime = openHour * 60 + openMinute;
+
+  // Parse close time
+  const [closeHour, closeMinute] = operationalHours.close
+    .split(":")
+    .map(Number);
+  const closeTime = closeHour * 60 + closeMinute;
+
+  // Handle cases where closing time is next day (e.g., 23:59 to 06:00)
+  if (closeTime < openTime) {
+    // Parking is open if current time is after opening OR before closing (next day)
+    return currentTime >= openTime || currentTime <= closeTime;
+  } else {
+    // Normal case: opening and closing on same day
+    return currentTime >= openTime && currentTime <= closeTime;
+  }
+};
+
 const ParkingCard = ({ item, onPress, formatDistance }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -43,6 +72,8 @@ const ParkingCard = ({ item, onPress, formatDistance }) => {
       }),
     ]).start();
   };
+
+  const isOpen = isParkingOpen(item.operational_hours);
 
   return (
     <Animated.View
@@ -76,6 +107,33 @@ const ParkingCard = ({ item, onPress, formatDistance }) => {
               },
             ]}
           />
+
+          {/* Status Badge */}
+          <View
+            style={[
+              styles.statusBadge,
+              isOpen ? styles.openBadge : styles.closedBadge,
+            ]}
+          >
+            <Text style={styles.statusText}>{isOpen ? "OPEN" : "CLOSED"}</Text>
+          </View>
+
+          {/* Rating Badge */}
+          {item.rating > 0 && (
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={10} color="white" />
+              <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+            </View>
+          )}
+
+          {/* Distance Badge */}
+          {item.calculatedDistance !== undefined && (
+            <View style={styles.nearBadge}>
+              <Text style={styles.nearBadgeText}>
+                {formatDistance(item.calculatedDistance)}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.parkingCardContent}>
@@ -83,56 +141,34 @@ const ParkingCard = ({ item, onPress, formatDistance }) => {
           <Text style={styles.parkingCardAddress} numberOfLines={1}>
             {item.address}
           </Text>
+
           <View style={styles.parkingCardDetails}>
-            <View style={styles.parkingCardDetail}>
-              <Ionicons name="location-outline" size={14} color="#6B7280" />
-              <Text style={styles.parkingCardDetailText}>
-                {formatDistance(item.calculatedDistance)}
-              </Text>
-            </View>
             <View style={styles.parkingCardDetail}>
               <Ionicons name="car-outline" size={14} color="#6B7280" />
               <Text style={styles.parkingCardDetailText}>
-                {(item.capacity?.car || 0) - (item.available?.car || 0)}/
-                {item.capacity?.car || 0} cars
-              </Text>
-            </View>
-          </View>
-          <View style={styles.parkingCardDetails}>
-            <View style={styles.parkingCardDetail}>
-              <Ionicons name="time-outline" size={14} color="#6B7280" />
-              <Text style={styles.parkingCardDetailText}>
-                {item.operational_hours?.open || "00:00"} -{" "}
-                {item.operational_hours?.close || "23:59"}
+                {item.available?.car || 0}/{item.capacity?.car || 0}
               </Text>
             </View>
             <View style={styles.parkingCardDetail}>
               <Ionicons name="bicycle-outline" size={14} color="#6B7280" />
               <Text style={styles.parkingCardDetailText}>
-                {(item.capacity?.motorcycle || 0) -
-                  (item.available?.motorcycle || 0)}
-                /{item.capacity?.motorcycle || 0} bikes
+                {item.available?.motorcycle || 0}/
+                {item.capacity?.motorcycle || 0}
               </Text>
             </View>
           </View>
+
           <View style={styles.parkingCardPrice}>
             <Text style={styles.parkingCardPriceValue}>
-              Rp {(item.rates?.car || 0).toLocaleString()}
+              Rp{" "}
+              {Math.min(
+                item.rates?.car || 0,
+                item.rates?.motorcycle || 0
+              ).toLocaleString()}
             </Text>
             <Text style={styles.parkingCardPriceUnit}>/hour</Text>
           </View>
         </View>
-
-        <View style={styles.ratingBadge}>
-          <Ionicons name="star" size={12} color="#FFF" />
-          <Text style={styles.ratingText}>{item.rating || "0.0"}</Text>
-        </View>
-
-        {item.calculatedDistance < 1 && (
-          <View style={styles.nearBadge}>
-            <Text style={styles.nearBadgeText}>Near</Text>
-          </View>
-        )}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -166,6 +202,25 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: "#000000",
+  },
+  statusBadge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  openBadge: {
+    backgroundColor: "rgba(16, 185, 129, 0.8)",
+  },
+  closedBadge: {
+    backgroundColor: "rgba(239, 68, 68, 0.8)",
+  },
+  statusText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "700",
   },
   parkingCardContent: {
     padding: 12,
@@ -211,29 +266,29 @@ const styles = StyleSheet.create({
   },
   ratingBadge: {
     position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "#FE7A3A",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(254, 122, 58, 0.9)",
     borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     flexDirection: "row",
     alignItems: "center",
   },
   ratingText: {
     color: "white",
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "600",
     marginLeft: 2,
   },
   nearBadge: {
     position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "#10B981",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    bottom: 8,
+    left: 8,
+    backgroundColor: "rgba(30, 58, 138, 0.8)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
   nearBadgeText: {
     color: "white",

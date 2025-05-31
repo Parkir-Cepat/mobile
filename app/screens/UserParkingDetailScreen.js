@@ -171,7 +171,48 @@ export default function UserParkingDetailScreen() {
     );
   }
 
+  // Function to check if parking is currently open
+  const isParkingOpen = (operationalHours) => {
+    if (!operationalHours?.open || !operationalHours?.close) {
+      return false; // Default to closed if no hours specified
+    }
+
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
+
+    // Parse open time
+    const [openHour, openMinute] = operationalHours.open.split(":").map(Number);
+    const openTime = openHour * 60 + openMinute;
+
+    // Parse close time
+    const [closeHour, closeMinute] = operationalHours.close
+      .split(":")
+      .map(Number);
+    const closeTime = closeHour * 60 + closeMinute;
+
+    // Handle cases where closing time is next day (e.g., 23:59 to 06:00)
+    if (closeTime < openTime) {
+      // Parking is open if current time is after opening OR before closing (next day)
+      return currentTime >= openTime || currentTime <= closeTime;
+    } else {
+      // Normal case: opening and closing on same day
+      return currentTime >= openTime && currentTime <= closeTime;
+    }
+  };
+
   const handleBooking = () => {
+    if (!parking) return;
+
+    const isOpen = isParkingOpen(parking.operational_hours);
+    if (!isOpen) {
+      Alert.alert(
+        "Parking Closed",
+        "This parking is currently closed. Please check the operational hours.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     Alert.alert("Booking", "Booking feature coming soon!");
   };
 
@@ -188,6 +229,8 @@ export default function UserParkingDetailScreen() {
   // Extract render logic to reusable function
   const renderParkingDetail = (parkingData) => {
     if (!parkingData) return null;
+
+    const isOpen = isParkingOpen(parkingData.operational_hours);
 
     const mapLocation = {
       latitude: parkingData.location.coordinates[1],
@@ -209,6 +252,29 @@ export default function UserParkingDetailScreen() {
 
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar style="light" />
+
+        {/* Status Banner */}
+        <View
+          style={[
+            styles.statusBanner,
+            isOpen ? styles.openBanner : styles.closedBanner,
+          ]}
+        >
+          <Ionicons
+            name={isOpen ? "checkmark-circle" : "close-circle"}
+            size={16}
+            color="white"
+          />
+          <Text style={styles.statusBannerText}>
+            {isOpen ? "CURRENTLY OPEN" : "CURRENTLY CLOSED"}
+          </Text>
+          <Text style={styles.statusBannerHours}>
+            Operating: {parkingData.operational_hours?.open || "00:00"} -{" "}
+            {parkingData.operational_hours?.close || "23:59"}
+          </Text>
+        </View>
+
         {/* Header with Image Carousel and Info Box */}
         <View style={styles.imageContainer}>
           <FlatList
@@ -345,9 +411,14 @@ export default function UserParkingDetailScreen() {
                 {parkingData.operational_hours?.open || "00:00"} -{" "}
                 {parkingData.operational_hours?.close || "23:59"}
               </Text>
-              <View style={styles.statusBadge}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  isOpen ? styles.openStatusBadge : styles.closedStatusBadge,
+                ]}
+              >
                 <Text style={styles.statusText}>
-                  {parkingData.status === "active" ? "OPEN" : "CLOSED"}
+                  {isOpen ? "OPEN" : "CLOSED"}
                 </Text>
               </View>
             </View>
@@ -405,14 +476,20 @@ export default function UserParkingDetailScreen() {
               </View>
             </View>
           </View>
-          <TouchableOpacity style={styles.bookButton} onPress={handleBooking}>
+          <TouchableOpacity
+            style={[styles.bookButton, !isOpen && styles.disabledBookButton]}
+            onPress={handleBooking}
+            disabled={!isOpen}
+          >
             <LinearGradient
-              colors={["#FF9A62", "#FE7A3A"]}
+              colors={isOpen ? ["#FF9A62", "#FE7A3A"] : ["#9CA3AF", "#6B7280"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.bookGradient}
             >
-              <Text style={styles.bookButtonText}>Book Now</Text>
+              <Text style={styles.bookButtonText}>
+                {isOpen ? "Book Now" : "Closed"}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -437,6 +514,31 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  openBanner: {
+    backgroundColor: "#10B981",
+  },
+  closedBanner: {
+    backgroundColor: "#EF4444",
+  },
+  statusBannerText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 12,
+    marginLeft: 6,
+    marginRight: 8,
+  },
+  statusBannerHours: {
+    color: "white",
+    fontSize: 11,
+    opacity: 0.9,
   },
   imageContainer: {
     height: height * 0.35,
@@ -723,5 +825,8 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "600",
     fontSize: 14,
+  },
+  disabledBookButton: {
+    opacity: 0.7,
   },
 });

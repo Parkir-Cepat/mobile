@@ -215,14 +215,26 @@ export default function LandOwnerDashboard() {
   };
 
   const handleLogout = async () => {
-    try {
-      await SecureStore.deleteItemAsync("access_token");
-      await SecureStore.deleteItemAsync("user_role");
-      await SecureStore.deleteItemAsync("user_data");
-      setIsSignIn(false);
-    } catch (error) {
-      console.log("Logout error:", error);
-    }
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await SecureStore.deleteItemAsync("access_token");
+            await SecureStore.deleteItemAsync("user_role");
+            await SecureStore.deleteItemAsync("user_data");
+            setIsSignIn(false);
+          } catch (error) {
+            console.log("Logout error:", error);
+          }
+        },
+      },
+    ]);
   };
 
   const renderLandItem = ({ item }) => {
@@ -421,9 +433,7 @@ export default function LandOwnerDashboard() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <LinearGradient
         colors={["#FE7A3A", "#FF9A62"]}
@@ -448,9 +458,14 @@ export default function LandOwnerDashboard() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.notifButton}>
-            <Ionicons name="notifications-outline" size={24} color="#FFF" />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.balanceCard}>
@@ -590,7 +605,6 @@ export default function LandOwnerDashboard() {
         <View style={styles.landsSection}>
           <View style={styles.landsSectionHeader}>
             <Text style={styles.sectionTitle}>My Parking Lands</Text>
-            <Text onPress={handleLogout}>Logout</Text>
             <Text style={styles.landCount}>
               {data?.getMyParkings?.length || 0} lands
             </Text>
@@ -672,7 +686,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
   },
   header: {
-    paddingTop: 50,
+    paddingTop: 35,
     paddingBottom: 25,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 30,
@@ -733,6 +747,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 4,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   notifButton: {
     width: 40,
     height: 40,
@@ -740,6 +758,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 12,
+  },
+  logoutButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   balanceCard: {
     backgroundColor: "#FFFFFF",

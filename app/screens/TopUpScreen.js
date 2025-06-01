@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -16,97 +16,130 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+import { gql, useMutation, useQuery } from "@apollo/client";
+import * as SecureStore from "expo-secure-store";
+import * as Linking from "expo-linking";
 import { formatAmountInput } from "../helpers/formatAmount";
 
-// Dummy payment methods
+const GET_USER_BALANCE = gql`
+  query Me {
+    me {
+      email
+      name
+      role
+      saldo
+    }
+  }
+`;
+
+const TOP_UP_SALDO = gql`
+  mutation TopUpSaldo($input: TopUpInput!) {
+    topUpSaldo(input: $input) {
+      transaction {
+        user_id
+        user {
+          email
+          name
+          role
+          saldo
+        }
+        transaction_id
+        type
+        payment_method
+        amount
+        status
+        qr_code_url
+      }
+      payment_url
+      qr_code
+    }
+  }
+`;
+
+// Expo Go compatible payment methods
 const PAYMENT_METHODS = [
   {
-    id: "cc",
-    name: "Credit / Debit Card",
-    icon: "card-outline",
-    providers: [
-      {
-        id: "visa",
-        name: "Visa",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Visa_Inc._logo.svg/200px-Visa_Inc._logo.svg.png",
-      },
-      {
-        id: "mc",
-        name: "Mastercard",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Mastercard-logo.svg/200px-Mastercard-logo.svg.png",
-      },
-    ],
-  },
-  {
-    id: "bank",
+    id: "bank_transfer",
     name: "Bank Transfer",
     icon: "business-outline",
     providers: [
       {
-        id: "bca",
-        name: "BCA",
-        image:
-          "https://upload.wikimedia.org/wikipedia/id/thumb/5/5c/Bank_Central_Asia.svg/200px-Bank_Central_Asia.svg.png",
+        id: "bri_va",
+        name: "BRI Virtual Account",
+        image: "https://via.placeholder.com/200x50/0066CC/FFFFFF?text=BRI",
       },
       {
-        id: "bni",
-        name: "BNI",
-        image:
-          "https://upload.wikimedia.org/wikipedia/id/thumb/5/55/BNI_logo.svg/200px-BNI_logo.svg.png",
+        id: "bca_va",
+        name: "BCA Virtual Account",
+        image: "https://via.placeholder.com/200x50/003D79/FFFFFF?text=BCA",
       },
       {
-        id: "mandiri",
-        name: "Mandiri",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/Bank_Mandiri_logo_2016.svg/200px-Bank_Mandiri_logo_2016.svg.png",
+        id: "mandiri_va",
+        name: "Mandiri Virtual Account",
+        image: "https://via.placeholder.com/200x50/F57C00/FFFFFF?text=MANDIRI",
       },
     ],
   },
   {
     id: "ewallet",
     name: "E-Wallet",
-    icon: "wallet-outline",
+    icon: "card-outline",
     providers: [
-      {
-        id: "ovo",
-        name: "OVO",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Logo_ovo_purple.svg/200px-Logo_ovo_purple.svg.png",
-      },
       {
         id: "gopay",
         name: "GoPay",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Gopay_logo.svg/200px-Gopay_logo.svg.png",
+        image: "https://via.placeholder.com/200x50/00AA5B/FFFFFF?text=GoPay",
       },
       {
         id: "dana",
         name: "DANA",
-        image:
-          "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Logo_dana_blue.svg/200px-Logo_dana_blue.svg.png",
+        image: "https://via.placeholder.com/200x50/118EEA/FFFFFF?text=DANA",
+      },
+      {
+        id: "ovo",
+        name: "OVO",
+        image: "https://via.placeholder.com/200x50/4C3494/FFFFFF?text=OVO",
+      },
+    ],
+  },
+  {
+    id: "qris_demo",
+    name: "QRIS",
+    icon: "qr-code-outline",
+    providers: [
+      {
+        id: "qris_simulation",
+        name: "QRIS",
+        image: "https://via.placeholder.com/200x50/1E3A8A/FFFFFF?text=QRIS",
       },
     ],
   },
 ];
 
-// Predefined top-up amounts
+// Predefined top-up amounts - smaller amounts for testing
 const AMOUNT_OPTIONS = [
-  { value: 50000, label: "Rp 50.000" },
-  { value: 100000, label: "Rp 100.000" },
-  { value: 200000, label: "Rp 200.000" },
-  { value: 500000, label: "Rp 500.000" },
+  { value: 1000, label: "Rp 1.000" },
+  { value: 5000, label: "Rp 5.000" },
+  { value: 10000, label: "Rp 10.000" },
+  { value: 25000, label: "Rp 25.000" },
 ];
 
 export default function TopUpScreen() {
   const navigation = useNavigation();
-  const [currentBalance] = useState(120000); // Dummy current balance
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [customAmount, setCustomAmount] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [selectedProvider, setSelectedProvider] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // GraphQL queries and mutations
+  const { data: userData, refetch: refetchBalance } =
+    useQuery(GET_USER_BALANCE);
+  const [topUpSaldo, { loading: topUpLoading }] = useMutation(TOP_UP_SALDO, {
+    refetchQueries: [{ query: GET_USER_BALANCE }],
+    awaitRefetchQueries: true,
+  });
+
+  const currentBalance = userData?.me?.saldo || 0;
 
   const handleAmountSelect = (amount) => {
     setSelectedAmount(amount);
@@ -114,7 +147,6 @@ export default function TopUpScreen() {
   };
 
   const handleCustomAmountChange = (text) => {
-    // Remove non-numeric characters
     const numericValue = text.replace(/[^0-9]/g, "");
     setCustomAmount(numericValue);
     setSelectedAmount(null);
@@ -135,45 +167,227 @@ export default function TopUpScreen() {
     return 0;
   };
 
-  const handleContinue = () => {
+  const updateSecureStoreBalance = async (newBalance) => {
+    try {
+      const userDataString = await SecureStore.getItemAsync("user_data");
+      if (userDataString) {
+        const userData = JSON.parse(userDataString);
+        userData.saldo = newBalance;
+        await SecureStore.setItemAsync("user_data", JSON.stringify(userData));
+      }
+    } catch (error) {
+      console.error("Error updating SecureStore balance:", error);
+    }
+  };
+
+  const handleContinue = async () => {
     const amount = getTopUpAmount();
 
-    if (!amount || amount < 10000) {
+    if (!amount || amount < 1000) {
       Alert.alert(
         "Invalid Amount",
-        "Please enter an amount of at least Rp 10,000"
+        "Please enter an amount of at least Rp 1,000"
       );
       return;
     }
 
-    if (!selectedPaymentMethod) {
+    if (!selectedPaymentMethod || !selectedProvider) {
       Alert.alert("Payment Method Required", "Please select a payment method");
       return;
     }
 
-    if (!selectedProvider) {
-      Alert.alert("Provider Required", "Please select a payment provider");
-      return;
-    }
+    try {
+      console.log("Starting top up with:", {
+        amount,
+        payment_method: selectedProvider.id,
+      });
 
-    setIsLoading(true);
-
-    // Simulate API call (would be replaced with actual Mitrans API)
-    setTimeout(() => {
-      setIsLoading(false);
-      Alert.alert(
-        "Top Up Initiated",
-        `You will be redirected to complete your payment of Rp ${formatAmountInput(
-          amount
-        )} with ${selectedProvider.name}`,
-        [
-          {
-            text: "OK",
-            onPress: () => navigation.navigate("HomeScreen"), // Replace with actual redirect
+      const result = await topUpSaldo({
+        variables: {
+          input: {
+            amount,
+            payment_method: selectedProvider.id,
           },
-        ]
-      );
-    }, 1500);
+        },
+      });
+
+      console.log("TopUp result:", result);
+
+      if (!result?.data?.topUpSaldo) {
+        throw new Error("Invalid response from server");
+      }
+
+      const { transaction, payment_url, qr_code } = result.data.topUpSaldo;
+
+      if (!transaction) {
+        throw new Error("Transaction not created");
+      }
+
+      // Handle different payment methods
+      if (selectedProvider.id === "dummy") {
+        // Dummy payment - immediate success
+        const newBalance = transaction.user?.saldo || currentBalance + amount;
+        await updateSecureStoreBalance(newBalance);
+
+        Alert.alert(
+          "Top Up Successful!",
+          `Your balance has been increased by Rp ${formatAmountInput(
+            amount
+          )}. New balance: Rp ${formatAmountInput(newBalance)}`,
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.navigate("HomeScreen"),
+            },
+          ]
+        );
+      } else if (selectedProvider.id === "qris_simulation") {
+        // QRIS simulation - show QR code with simulate button
+        navigation.navigate("QRISPaymentScreen", {
+          transaction_id: transaction.transaction_id,
+          amount,
+          payment_method: selectedProvider.name,
+          qr_code: qr_code,
+          simulation: true,
+        });
+      } else if (selectedProvider.id.includes("_va")) {
+        // Virtual Account - check response from server
+        const transactionData = result.data.topUpSaldo.transaction;
+        const { va_number, bank, snap_redirect, simulation } = transactionData;
+
+        console.log("VA Transaction data:", {
+          va_number,
+          bank,
+          snap_redirect,
+          simulation,
+          payment_url,
+        });
+
+        if (snap_redirect && payment_url) {
+          // Need to redirect to Snap page to get real VA number
+          Alert.alert(
+            "Virtual Account Setup",
+            `You will be redirected to Midtrans to get your ${selectedProvider.name} number.`,
+            [
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+              {
+                text: "Get VA Number",
+                onPress: async () => {
+                  try {
+                    const supported = await Linking.canOpenURL(payment_url);
+                    if (supported) {
+                      await Linking.openURL(payment_url);
+                      navigation.navigate("PaymentWaitingScreen", {
+                        transaction_id: transaction.transaction_id,
+                        amount,
+                        payment_method: selectedProvider.name,
+                        type: "virtual_account",
+                      });
+                    } else {
+                      Alert.alert("Error", "Cannot open Midtrans page");
+                    }
+                  } catch (error) {
+                    console.error("Error opening URL:", error);
+                    Alert.alert("Error", "Failed to open Midtrans page");
+                  }
+                },
+              },
+            ]
+          );
+        } else {
+          // Have VA number (real or simulation) - navigate to VA screen
+          const displayVANumber =
+            va_number ||
+            `DEMO-${selectedProvider.id.split("_")[0].toUpperCase()}`;
+          const isSimulation =
+            simulation || !va_number || va_number.startsWith("SIM-");
+
+          navigation.navigate("VirtualAccountScreen", {
+            transaction_id: transaction.transaction_id,
+            amount,
+            payment_method: selectedProvider.name,
+            bank: selectedProvider.id.split("_")[0].toUpperCase(),
+            va_number: displayVANumber,
+            simulation: isSimulation,
+          });
+        }
+      } else if (["gopay", "dana", "ovo"].includes(selectedProvider.id)) {
+        // E-wallet - show options for real redirect or simulation
+        Alert.alert(
+          "E-Wallet Payment",
+          `Pilih metode pembayaran ${selectedProvider.name}:`,
+          [
+            {
+              text: "Batal",
+              style: "cancel",
+            },
+            {
+              text: "Payment Simulation",
+              onPress: () => {
+                navigation.navigate("EWalletPaymentScreen", {
+                  transaction_id: transaction.transaction_id,
+                  amount,
+                  payment_method: selectedProvider.name,
+                  payment_url: payment_url,
+                  simulation: true,
+                });
+              },
+            },
+            {
+              text: "Open App Midtrans",
+              onPress: async () => {
+                if (payment_url) {
+                  try {
+                    const supported = await Linking.canOpenURL(payment_url);
+                    if (supported) {
+                      await Linking.openURL(payment_url);
+                      navigation.navigate("PaymentWaitingScreen", {
+                        transaction_id: transaction.transaction_id,
+                        amount,
+                        payment_method: selectedProvider.name,
+                        simulation: false,
+                      });
+                    } else {
+                      Alert.alert("Error", "Cannot open Midtrans payment page");
+                    }
+                  } catch (error) {
+                    console.error("Error opening Midtrans URL:", error);
+                    Alert.alert(
+                      "Error",
+                      "Failed to open Midtrans payment page"
+                    );
+                  }
+                } else {
+                  Alert.alert("Error", "No payment URL received from Midtrans");
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        throw new Error("Unsupported payment method");
+      }
+    } catch (error) {
+      console.error("Top up error:", error);
+
+      let errorMessage = "An error occurred during top up. Please try again.";
+
+      if (error.message.includes("Cannot read property")) {
+        errorMessage =
+          "Server response error. Please check your connection and try again.";
+      } else if (error.networkError) {
+        errorMessage = "Network error. Please check your internet connection.";
+      } else if (error.graphQLErrors?.length > 0) {
+        errorMessage = error.graphQLErrors[0].message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Top Up Failed", errorMessage);
+    }
   };
 
   return (
@@ -336,7 +550,8 @@ export default function TopUpScreen() {
               styles.continueButton,
               (!getTopUpAmount() ||
                 !selectedPaymentMethod ||
-                !selectedProvider) &&
+                !selectedProvider ||
+                topUpLoading) &&
                 styles.continueButtonDisabled,
             ]}
             onPress={handleContinue}
@@ -344,10 +559,10 @@ export default function TopUpScreen() {
               !getTopUpAmount() ||
               !selectedPaymentMethod ||
               !selectedProvider ||
-              isLoading
+              topUpLoading
             }
           >
-            {isLoading ? (
+            {topUpLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
               <Text style={styles.continueButtonText}>Continue to Payment</Text>

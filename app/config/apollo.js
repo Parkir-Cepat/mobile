@@ -3,7 +3,7 @@ import { setContext } from "@apollo/client/link/context";
 import * as SecureStore from "expo-secure-store";
 
 // API URL - sesuaikan dengan URL backend GraphQL Anda
-const API_URL = "http://localhost:3000/graphql";
+const API_URL = "https://vrjj8bb9-3000.asse.devtunnels.ms/graphql";
 
 // HTTP connection to the API
 const httpLink = createHttpLink({

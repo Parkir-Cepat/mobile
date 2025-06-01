@@ -15,7 +15,7 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { gql, useQuery } from "@apollo/client";
 import * as SecureStore from "expo-secure-store";
@@ -25,12 +25,12 @@ import { StatusBar } from "expo-status-bar";
 import ParkingCard from "../components/ParkingCard";
 
 const GET_USER_PROFILE = gql`
-  query GetUserProfile {
-    getUserProfile {
-      name
+  query Me {
+    me {
       email
-      saldo
+      name
       role
+      saldo
     }
   }
 `;
@@ -266,7 +266,11 @@ export default function HomeScreen() {
 
   const handleBookings = () => {
     // Navigate to bookings screen
-    navigation.navigate("BookingsScreen");
+    navigation.navigate("BookingDetailScreen");
+  };
+
+  const handleViewAllBookings = () => {
+    navigation.navigate("MyBookingsScreen");
   };
 
   const handleParkingDetail = (parkingId) => {
@@ -376,6 +380,50 @@ export default function HomeScreen() {
     console.log("Nearby loading state:", nearbyLoading);
   }, [nearbyLoading]);
 
+  // Display balance with hybrid approach
+  const displayBalance = () => {
+    // Show SecureStore data first (instant)
+    if (userData && !data) {
+      return `Rp ${userData.saldo.toLocaleString()}`;
+    }
+
+    // Update with real-time data when available
+    if (data?.me?.saldo !== undefined) {
+      return `Rp ${data.me.saldo.toLocaleString()}`;
+    }
+
+    // Fallback states
+    if (loading) return "Loading...";
+    if (error) return "Error";
+
+    return "Rp 0";
+  };
+
+  // Update SecureStore when GraphQL data changes
+  useEffect(() => {
+    const updateUserData = async () => {
+      if (data?.me && userData) {
+        // Update userData state
+        const updatedUserData = {
+          ...userData,
+          name: data.me.name,
+          email: data.me.email,
+          saldo: data.me.saldo,
+          role: data.me.role,
+        };
+        setUserData(updatedUserData);
+
+        // Update SecureStore for next app launch
+        await SecureStore.setItemAsync(
+          "user_data",
+          JSON.stringify(updatedUserData)
+        );
+      }
+    };
+
+    updateUserData();
+  }, [data]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -418,13 +466,7 @@ export default function HomeScreen() {
           <View style={styles.balanceCard}>
             <View>
               <Text style={styles.balanceLabel}>Your Balance</Text>
-              <Text style={styles.balanceAmount}>
-                {loading
-                  ? "Loading..."
-                  : error
-                  ? "Error"
-                  : `Rp ${(data?.getUserProfile?.saldo || 0).toLocaleString()}`}
-              </Text>
+              <Text style={styles.balanceAmount}>{displayBalance()}</Text>
             </View>
             <TouchableOpacity
               style={styles.topUpButtonSmall}
@@ -470,70 +512,74 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Active Booking Section */}
-        {activeBookings.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Active Booking</Text>
-
-            {activeBookings.map((booking) => (
-              <TouchableOpacity
-                key={booking.id}
-                style={styles.activeBookingCard}
-                onPress={() =>
-                  navigation.navigate("BookingDetailsScreen", {
-                    bookingId: booking.id,
-                  })
-                }
-              >
-                <View style={styles.activeBookingHeader}>
-                  <View style={styles.activeBookingStatus}>
-                    <View style={styles.statusDot} />
-                    <Text style={styles.statusText}>Active</Text>
-                  </View>
-                  <Text style={styles.bookingTime}>
-                    {formatTimeRemaining(booking.entryTime)}
-                  </Text>
-                </View>
-
-                <Text style={styles.parkingNameText}>
-                  {booking.parkingName}
-                </Text>
-
-                <View style={styles.bookingDetails}>
-                  <View style={styles.bookingDetail}>
-                    <Ionicons name="car-outline" size={18} color="#6B7280" />
-                    <Text style={styles.bookingDetailText}>
-                      {booking.vehicleNo}
-                    </Text>
-                  </View>
-                  <View style={styles.bookingDetail}>
-                    <Ionicons name="time-outline" size={18} color="#6B7280" />
-                    <Text style={styles.bookingDetailText}>
-                      {new Date(booking.entryTime).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.viewDetailsContainer}>
-                  <Text style={styles.viewDetailsText}>View Details</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#FE7A3A" />
-                </View>
-                <Text onPress={handleLogout}> LOGOUT</Text>
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity
-              style={styles.viewAllButton}
-              onPress={handleBookings}
-            >
-              <Text style={styles.viewAllText}>View All Bookings</Text>
-              <Ionicons name="arrow-forward" size={16} color="#FE7A3A" />
+        {/* Quick Booking Section */}
+        <View style={styles.quickBookingSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My Recent Bookings</Text>
+            <TouchableOpacity onPress={handleViewAllBookings}>
+              <Text style={styles.viewAllText}>View All</Text>
+              <Text onPress={handleLogout}> Logout</Text>
             </TouchableOpacity>
           </View>
-        )}
+
+          {/* Dummy content for recent bookings - to be replaced with real data */}
+          {activeBookings.length === 0 && (
+            <View style={styles.emptyBookingsContainer}>
+              <Ionicons name="calendar-outline" size={60} color="#D1D5DB" />
+              <Text style={styles.emptyBookingsText}>
+                No recent bookings found
+              </Text>
+              <Text style={styles.emptyBookingsSubtitle}>
+                Your recent bookings will appear here
+              </Text>
+            </View>
+          )}
+
+          {/* Recent bookings list - currently using activeBookings state */}
+          {activeBookings.length > 0 && (
+            <FlatList
+              data={activeBookings}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentBookingsList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.recentBookingCard}
+                  onPress={() =>
+                    navigation.navigate("BookingDetailsScreen", {
+                      bookingId: item.id,
+                    })
+                  }
+                >
+                  <View style={styles.recentBookingInfo}>
+                    <Text style={styles.parkingNameText}>
+                      {item.parkingName}
+                    </Text>
+                    <Text style={styles.bookingStatusActive}>Active</Text>
+                  </View>
+                  <View style={styles.recentBookingDetails}>
+                    <View style={styles.bookingDetail}>
+                      <Ionicons name="car-outline" size={16} color="#6B7280" />
+                      <Text style={styles.bookingDetailText}>
+                        {item.vehicleNo}
+                      </Text>
+                    </View>
+                    <View style={styles.bookingDetail}>
+                      <Ionicons name="time-outline" size={16} color="#6B7280" />
+                      <Text style={styles.bookingDetailText}>
+                        {new Date(item.entryTime).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
 
         {/* Nearby Parking Section */}
         <View style={styles.sectionContainer}>
@@ -622,25 +668,6 @@ export default function HomeScreen() {
                 }}
               />
             )}
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.quickActionContainer}>
-          <TouchableOpacity
-            style={[styles.quickAction, styles.findParkingAction]}
-            onPress={handleSearchParking}
-          >
-            <Ionicons name="search" size={24} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Find Parking</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickAction, styles.scanAction]}
-            onPress={handleScanQR}
-          >
-            <Ionicons name="qr-code" size={24} color="#FFFFFF" />
-            <Text style={styles.quickActionText}>Scan to Park</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -948,27 +975,80 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
   },
-  retryButton: {
-    backgroundColor: "#FE7A3A",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+  debugText: {
     marginTop: 10,
+    fontSize: 14,
+    color: "#4B5563",
+    fontFamily: "monospace",
   },
   retryButtonText: {
     color: "white",
     fontWeight: "600",
     fontSize: 14,
   },
-  debugContainer: {
-    backgroundColor: "#F3F4F6",
-    padding: 10,
+  retryButton: {
+    marginTop: 10,
     borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "#FE7A3A",
+  },
+  quickBookingSection: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  recentBookingsList: {
+    paddingRight: 20,
+    paddingBottom: 15,
+  },
+  recentBookingCard: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 15,
+    marginRight: 10,
+    minWidth: 220,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  recentBookingInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
   },
-  debugText: {
+  bookingStatusActive: {
+    backgroundColor: "#10B981",
+    color: "white",
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     fontSize: 12,
-    color: "#6B7280",
-    fontFamily: "monospace",
+    fontWeight: "600",
+  },
+  emptyBookingsContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyBookingsText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 15,
+  },
+  emptyBookingsSubtitle: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    marginTop: 5,
+    textAlign: "center",
   },
 });

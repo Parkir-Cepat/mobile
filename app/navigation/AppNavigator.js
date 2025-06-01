@@ -17,6 +17,12 @@ import OwnerNavigator from "./OwnerNavigator";
 import { authContext } from "../context/authContext";
 import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import UserParkingDetailScreen from "../screens/UserParkingDetailScreen";
+import QRISPaymentScreen from "../screens/QRISPaymentScreen";
+import VirtualAccountScreen from "../screens/VirtualAccountScreen";
+import EWalletPaymentScreen from "../screens/EWalletPaymentScreen";
+import BookingFormScreen from "../screens/BookingFormScreen";
+import BookingDetailScreen from "../screens/BookingDetailScreen";
+import MyBookingsScreen from "../screens/MyBookingsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -42,6 +48,36 @@ const HomeNavigator = () => {
       <Stack.Screen
         name="SearchParking"
         component={SearchParkingScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="QRISPaymentScreen"
+        component={QRISPaymentScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="EWalletPaymentScreen"
+        component={EWalletPaymentScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="VirtualAccountScreen"
+        component={VirtualAccountScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BookingFormScreen"
+        component={BookingFormScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BookingDetailScreen"
+        component={BookingDetailScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="MyBookingsScreen"
+        component={MyBookingsScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

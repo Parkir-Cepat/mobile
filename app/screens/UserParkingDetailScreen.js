@@ -213,7 +213,10 @@ export default function UserParkingDetailScreen() {
       return;
     }
 
-    Alert.alert("Booking", "Booking feature coming soon!");
+    // Navigate to booking form
+    navigation.navigate("BookingFormScreen", {
+      parking: parking,
+    });
   };
 
   const renderImageItem = ({ item }) => (

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,11 +9,14 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useQuery, useMutation } from "@apollo/client";
+import QRCode from "react-native-qrcode-svg";
 
 const GET_BOOKING = gql`
   query GetBooking($getBookingId: ID!) {
@@ -153,6 +156,8 @@ export default function BookingDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { bookingId } = route.params;
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [currentQRData, setCurrentQRData] = useState(null);
 
   const { data, loading, error, refetch } = useQuery(GET_BOOKING, {
     variables: { getBookingId: bookingId },
@@ -388,20 +393,13 @@ export default function BookingDetailScreen() {
   };
 
   const showQRCode = (qrCode, instructions) => {
-    Alert.alert(
-      "Entry QR Code",
-      `${instructions}\n\nQR Code: ${qrCode.substring(0, 20)}...`,
-      [
-        {
-          text: "Copy QR Code",
-          onPress: () => {
-            // You can implement clipboard copy here if needed
-            console.log("QR Code:", qrCode);
-          },
-        },
-        { text: "Close" },
-      ]
-    );
+    setCurrentQRData({ qrCode, instructions });
+    setQrModalVisible(true);
+  };
+
+  const closeQRModal = () => {
+    setQrModalVisible(false);
+    setCurrentQRData(null);
   };
 
   const getStatusMessage = (status) => {
@@ -817,6 +815,80 @@ export default function BookingDetailScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* QR Code Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={qrModalVisible}
+        onRequestClose={closeQRModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>QR Code</Text>
+              <TouchableOpacity
+                onPress={closeQRModal}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {currentQRData && (
+              <View style={styles.qrModalBody}>
+                <Text style={styles.qrInstructions}>
+                  {currentQRData.instructions}
+                </Text>
+
+                <View style={styles.qrCodeContainer}>
+                  <QRCode
+                    value={currentQRData.qrCode}
+                    size={250}
+                    backgroundColor="white"
+                    color="black"
+                  />
+                </View>
+
+                <View style={styles.qrDetails}>
+                  <Text style={styles.qrDetailLabel}>Booking ID:</Text>
+                  <Text style={styles.qrDetailValue}>
+                    #{booking?._id?.slice(-8)}
+                  </Text>
+                </View>
+
+                <View style={styles.qrDetails}>
+                  <Text style={styles.qrDetailLabel}>Vehicle Type:</Text>
+                  <Text style={styles.qrDetailValue}>
+                    {booking?.vehicle_type?.charAt(0).toUpperCase() +
+                      booking?.vehicle_type?.slice(1)}
+                  </Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.shareButton}
+                    onPress={() => {
+                      // Implement share functionality if needed
+                      Alert.alert("QR Code", "QR Code ready to scan!");
+                    }}
+                  >
+                    <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.shareButtonText}>Share QR</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.doneButton}
+                    onPress={closeQRModal}
+                  >
+                    <Text style={styles.doneButtonText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1181,5 +1253,116 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flex: 1,
     fontWeight: "500",
+  },
+  // QR Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    margin: 20,
+    maxHeight: "80%",
+    width: Dimensions.get("window").width - 40,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1E3A8A",
+  },
+  closeButton: {
+    padding: 5,
+    borderRadius: 15,
+    backgroundColor: "#F3F4F6",
+  },
+  qrModalBody: {
+    alignItems: "center",
+  },
+  qrInstructions: {
+    fontSize: 16,
+    color: "#374151",
+    textAlign: "center",
+    marginBottom: 25,
+    lineHeight: 22,
+  },
+  qrCodeContainer: {
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderRadius: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    marginBottom: 25,
+  },
+  qrDetails: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  qrDetailLabel: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  qrDetailValue: {
+    fontSize: 14,
+    color: "#1E3A8A",
+    fontWeight: "600",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 25,
+  },
+  shareButton: {
+    backgroundColor: "#3B82F6",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 10,
+    justifyContent: "center",
+  },
+  shareButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  doneButton: {
+    backgroundColor: "#10B981",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    flex: 1,
+    marginLeft: 10,
+    alignItems: "center",
+  },
+  doneButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 16,
   },
 });

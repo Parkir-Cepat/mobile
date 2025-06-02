@@ -23,6 +23,7 @@ import EWalletPaymentScreen from "../screens/EWalletPaymentScreen";
 import BookingFormScreen from "../screens/BookingFormScreen";
 import BookingDetailScreen from "../screens/BookingDetailScreen";
 import MyBookingsScreen from "../screens/MyBookingsScreen";
+import AppTest from "../test";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -187,6 +188,7 @@ function AppNavigator() {
   if (!isSignIn) {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* <Stack.Screen name="testscreen" component={AppTest} /> */}
         <Stack.Screen name="LoginScreen" component={LoginScreen} />
         <Stack.Screen name="RegisterScreen" component={RegisterScreen} />
       </Stack.Navigator>

@@ -38,6 +38,13 @@ export default {
     web: {
       favicon: "./assets/favicon.png",
     },
-    plugins: ["expo-web-browser", "expo-location"],
+    plugins: [
+      "expo-web-browser",
+      "expo-location",
+      // {
+      //   locationAlwaysAndWhenInUsePermission:
+      //     "Allow ParkGo to use your location.",
+      // },
+    ],
   },
 };

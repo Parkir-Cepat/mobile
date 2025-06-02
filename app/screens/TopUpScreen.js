@@ -49,6 +49,8 @@ const TOP_UP_SALDO = gql`
         amount
         status
         qr_code_url
+        va_number
+        bank
       }
       payment_url
       qr_code
@@ -66,7 +68,7 @@ const PAYMENT_METHODS = [
       {
         id: "bri_va",
         name: "BRI Virtual Account",
-        image: "https://via.placeholder.com/200x50/0066CC/FFFFFF?text=BRI",
+        image: "https://via.placeholder.com/200x50/003D7A/FFFFFF?text=BRI",
       },
       {
         id: "bca_va",
@@ -76,7 +78,17 @@ const PAYMENT_METHODS = [
       {
         id: "mandiri_va",
         name: "Mandiri Virtual Account",
-        image: "https://via.placeholder.com/200x50/F57C00/FFFFFF?text=MANDIRI",
+        image: "https://via.placeholder.com/200x50/FF8A00/FFFFFF?text=MANDIRI",
+      },
+      {
+        id: "bni_va",
+        name: "BNI Virtual Account",
+        image: "https://via.placeholder.com/200x50/ED8B00/FFFFFF?text=BNI",
+      },
+      {
+        id: "permata_va",
+        name: "Permata Virtual Account",
+        image: "https://via.placeholder.com/200x50/00A651/FFFFFF?text=PERMATA",
       },
     ],
   },
@@ -211,13 +223,17 @@ export default function TopUpScreen() {
         },
       });
 
-      console.log("TopUp result:", result);
+      console.log("TopUp result >>>>>>", JSON.stringify(result, null, 2));
 
       if (!result?.data?.topUpSaldo) {
         throw new Error("Invalid response from server");
       }
 
       const { transaction, payment_url, qr_code } = result.data.topUpSaldo;
+      console.log(
+        "Full transaction data:",
+        JSON.stringify(transaction, null, 2)
+      );
 
       if (!transaction) {
         throw new Error("Transaction not created");
@@ -251,69 +267,39 @@ export default function TopUpScreen() {
           simulation: true,
         });
       } else if (selectedProvider.id.includes("_va")) {
-        // Virtual Account - check response from server
-        const transactionData = result.data.topUpSaldo.transaction;
-        const { va_number, bank, snap_redirect, simulation } = transactionData;
+        // Virtual Account - navigate to VirtualAccountScreen
+        const topUpData = result.data.topUpSaldo;
+
+        // Try to get VA data from both transaction level and root level
+        const va_number = topUpData.va_number || transaction.va_number;
+        const bank = topUpData.bank || transaction.bank;
+        const simulation = topUpData.simulation;
 
         console.log("VA Transaction data:", {
           va_number,
           bank,
-          snap_redirect,
           simulation,
           payment_url,
+          transaction_va: transaction.va_number,
+          transaction_bank: transaction.bank,
+          root_va: topUpData.va_number,
+          root_bank: topUpData.bank,
         });
 
-        if (snap_redirect && payment_url) {
-          // Need to redirect to Snap page to get real VA number
-          Alert.alert(
-            "Virtual Account Setup",
-            `You will be redirected to Midtrans to get your ${selectedProvider.name} number.`,
-            [
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-              {
-                text: "Get VA Number",
-                onPress: async () => {
-                  try {
-                    const supported = await Linking.canOpenURL(payment_url);
-                    if (supported) {
-                      await Linking.openURL(payment_url);
-                      navigation.navigate("PaymentWaitingScreen", {
-                        transaction_id: transaction.transaction_id,
-                        amount,
-                        payment_method: selectedProvider.name,
-                        type: "virtual_account",
-                      });
-                    } else {
-                      Alert.alert("Error", "Cannot open Midtrans page");
-                    }
-                  } catch (error) {
-                    console.error("Error opening URL:", error);
-                    Alert.alert("Error", "Failed to open Midtrans page");
-                  }
-                },
-              },
-            ]
-          );
-        } else {
-          // Have VA number (real or simulation) - navigate to VA screen
-          const displayVANumber =
-            va_number ||
-            `DEMO-${selectedProvider.id.split("_")[0].toUpperCase()}`;
-          const isSimulation =
-            simulation || !va_number || va_number.startsWith("SIM-");
+        // Extract bank name from provider ID (e.g., "bca_va" -> "BCA")
+        const bankName =
+          bank || selectedProvider.id.split("_")[0].toUpperCase();
 
-          navigation.navigate("VirtualAccountScreen", {
-            transaction_id: transaction.transaction_id,
-            amount,
-            payment_method: selectedProvider.name,
-            bank: selectedProvider.id.split("_")[0].toUpperCase(),
-            va_number: displayVANumber,
-            simulation: isSimulation,
-          });
-        }
+        // Navigate to Virtual Account Screen with all necessary data
+        navigation.navigate("VirtualAccountScreen", {
+          transaction_id: transaction.transaction_id,
+          amount,
+          payment_method: selectedProvider.id,
+          bank: bankName,
+          va_number: va_number || "Generating...",
+          simulation: simulation || false,
+          payment_url,
+        });
       } else if (["gopay", "dana", "ovo"].includes(selectedProvider.id)) {
         // E-wallet - show options for real redirect or simulation
         Alert.alert(

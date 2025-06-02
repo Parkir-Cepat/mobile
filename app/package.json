@@ -21,6 +21,7 @@
     "dotenv": "^16.5.0",
     "expo": "~53.0.9",
     "expo-auth-session": "~6.1.5",
+    "expo-device": "^7.1.4",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~14.1.4",
     "expo-location": "~18.1.5",

@@ -2,9 +2,7 @@ import { useState, useEffect } from "react";
 import { Platform, Text, View, StyleSheet } from "react-native";
 
 import * as Device from "expo-device";
-
 import * as Location from "expo-location";
-// import { useIdTokenAuthRequest } from "expo-auth-session/providers/google";
 
 export default function AppTest() {
   const [location, setLocation] = useState(null);
@@ -36,6 +34,7 @@ export default function AppTest() {
     text = errorMsg;
   } else if (location) {
     text = JSON.stringify(location);
+    console.log(location, "<<<<<< LOCATION");
   }
 
   return (

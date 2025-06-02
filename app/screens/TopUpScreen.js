@@ -54,6 +54,9 @@ const TOP_UP_SALDO = gql`
       }
       payment_url
       qr_code
+      va_number
+      bank
+      simulation
     }
   }
 `;
@@ -149,6 +152,13 @@ export default function TopUpScreen() {
   const [topUpSaldo, { loading: topUpLoading }] = useMutation(TOP_UP_SALDO, {
     refetchQueries: [{ query: GET_USER_BALANCE }],
     awaitRefetchQueries: true,
+    onCompleted: (data) => {
+      console.log("🎯 TopUp mutation completed:", data);
+      // Additional success handling if needed
+    },
+    onError: (error) => {
+      console.error("❌ TopUp mutation error:", error);
+    },
   });
 
   const currentBalance = userData?.me?.saldo || 0;
@@ -299,6 +309,8 @@ export default function TopUpScreen() {
           va_number: va_number || "Generating...",
           simulation: simulation || false,
           payment_url,
+          // Add auto-polling flag
+          enableAutoPolling: true,
         });
       } else if (["gopay", "dana", "ovo"].includes(selectedProvider.id)) {
         // E-wallet - show options for real redirect or simulation

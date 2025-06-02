@@ -10,9 +10,14 @@ import {
   Clipboard,
   Linking,
   ActivityIndicator,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { formatAmountInput } from "../helpers/formatAmount";
@@ -57,9 +62,22 @@ const GET_TRANSACTION_DETAILS = gql`
       va_number
       bank
       qr_code_url
+      createdAt
+      updatedAt
       user {
         saldo
       }
+    }
+  }
+`;
+
+const GET_USER_BALANCE = gql`
+  query Me {
+    me {
+      email
+      name
+      role
+      saldo
     }
   }
 `;
@@ -83,68 +101,323 @@ export default function VirtualAccountScreen() {
     va_number: initialVaNumber,
   });
   const [isLoadingVA, setIsLoadingVA] = useState(!initialVaNumber);
+  const [isPaymentSuccessful, setIsPaymentSuccessful] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState("pending");
+  const [pollingInterval, setPollingInterval] = useState(0);
+  const [hasOpenedSandbox, setHasOpenedSandbox] = useState(false);
 
   const [confirmPayment, { loading: confirmLoading }] =
     useMutation(CONFIRM_PAYMENT);
-  const [simulatePayment, { loading: simulateLoading }] =
-    useMutation(SIMULATE_PAYMENT);
+  const [simulatePayment, { loading: simulateLoading }] = useMutation(
+    SIMULATE_PAYMENT,
+    {
+      refetchQueries: [{ query: GET_USER_BALANCE }],
+      awaitRefetchQueries: true,
+    }
+  );
 
   const { data: transactionDetails, refetch } = useQuery(
     GET_TRANSACTION_DETAILS,
     {
-      variables: { transaction_id }, // Use transaction_id instead of internal _id
-      pollInterval:
-        !transactionData.va_number ||
-        transactionData.va_number === "Generating..."
-          ? 3000
-          : 0,
+      variables: { transaction_id },
+      pollInterval: pollingInterval,
       skip: !transaction_id,
+      fetchPolicy: "cache-and-network",
+      errorPolicy: "all",
       onCompleted: (data) => {
         console.log(
-          "Transaction details fetched:",
-          data.checkTransactionStatus
+          "📊 Transaction query RAW response:",
+          JSON.stringify(data, null, 2)
         );
 
         const transaction = data.checkTransactionStatus;
         if (transaction) {
+          console.log(`🔄 Transaction data from server:`, {
+            id: transaction.transaction_id,
+            status: transaction.status,
+            amount: transaction.amount,
+            user_saldo: transaction.user?.saldo,
+            va_number: transaction.va_number,
+            bank: transaction.bank,
+          });
+
           const newData = {
             bank: transaction.bank || initialBank,
             va_number: transaction.va_number || initialVaNumber,
           };
 
-          console.log("Updated transaction data:", newData);
+          console.log("🔄 Updated local transaction data:", newData);
           setTransactionData(newData);
 
           if (newData.va_number && newData.va_number !== "Generating...") {
             setIsLoadingVA(false);
           }
+
+          // Update current status ONLY if different
+          const newStatus = transaction.status;
+          console.log(
+            `📋 Status check: current=${currentStatus}, new=${newStatus}`
+          );
+
+          if (newStatus !== currentStatus) {
+            console.log(
+              `🔄 Status changed from ${currentStatus} to ${newStatus}`
+            );
+            setCurrentStatus(newStatus);
+          }
+
+          // 🚀 Enhanced success detection - trigger immediately when detected
+          if (newStatus === "success" && !isPaymentSuccessful) {
+            console.log("🎉 Payment success detected for the first time!");
+            console.log(
+              `💰 Updated balance from server: ${transaction.user?.saldo}`
+            );
+
+            // Immediately stop polling and set success state
+            setIsPaymentSuccessful(true);
+            setPollingInterval(0);
+            setCurrentStatus("success");
+
+            // Show success alert with updated balance - immediate trigger
+            const newBalance = transaction.user?.saldo || 0;
+            Alert.alert(
+              "🎉 Payment Successful!",
+              `Your top-up of Rp ${formatAmountInput(
+                amount
+              )} has been processed successfully!\n\nNew Balance: Rp ${formatAmountInput(
+                newBalance
+              )}`,
+              [
+                {
+                  text: "Great!",
+                  onPress: () => {
+                    console.log(
+                      "✅ Payment detection completed - navigating home"
+                    );
+                    navigation.navigate("HomeScreen");
+                  },
+                },
+              ]
+            );
+          } else if (newStatus === "failed" && currentStatus !== "failed") {
+            console.log("❌ Payment failure detected!");
+            setCurrentStatus("failed");
+            setPollingInterval(0);
+
+            Alert.alert(
+              "❌ Payment Failed",
+              "Your payment could not be processed. Please try again.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    navigation.goBack();
+                  },
+                },
+              ]
+            );
+          } else if (newStatus === "success" && isPaymentSuccessful) {
+            console.log(
+              "🔄 Payment already marked as successful, no action needed"
+            );
+          }
         }
       },
       onError: (error) => {
-        console.error("Error fetching transaction details:", error);
-
-        // If query fails, try to open payment URL to get VA number
-        if (payment_url && !transactionData.va_number) {
-          Alert.alert(
-            "Get VA Number",
-            "Unable to fetch VA number directly. Open Midtrans page to get your Virtual Account number.",
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Open Midtrans",
-                onPress: () => {
-                  Linking.openURL(payment_url).catch(() => {
-                    Alert.alert("Error", "Could not open Midtrans page");
-                  });
-                },
-              },
-            ]
-          );
-        }
-        setIsLoadingVA(false);
+        console.error("❌ Transaction query error:", error);
       },
     }
   );
+
+  // Enhanced focus effect - check transaction when returning from sandbox
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("🔍 Screen focused - checking if returned from sandbox");
+
+      // If user has opened sandbox and screen is focused, check transaction immediately
+      if (hasOpenedSandbox && currentStatus === "pending") {
+        console.log(
+          "🔄 User returned from sandbox - forcing transaction check"
+        );
+        setPollingInterval(0); // Stop current polling
+
+        // Force immediate check
+        setTimeout(async () => {
+          try {
+            const { data } = await refetch();
+            if (data?.checkTransactionStatus?.status === "success") {
+              console.log("✅ Success detected on return from sandbox!");
+              // The onCompleted handler will take care of the rest
+            } else {
+              // Resume aggressive polling for a short time
+              console.log(
+                "⏳ Still pending after sandbox - resuming aggressive polling"
+              );
+              setPollingInterval(2000); // More frequent polling for 30 seconds
+
+              // Fallback to normal polling after 30 seconds
+              setTimeout(() => {
+                if (currentStatus === "pending") {
+                  console.log("🔄 Switching to normal polling interval");
+                  setPollingInterval(5000);
+                }
+              }, 30000);
+            }
+          } catch (error) {
+            console.error("❌ Error checking transaction on focus:", error);
+            // Resume normal polling on error
+            setPollingInterval(5000);
+          }
+        }, 1000);
+      }
+    }, [hasOpenedSandbox, currentStatus, refetch])
+  );
+
+  // App state change listener for detecting return from browser
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      console.log(`📱 App state changed to: ${nextAppState}`);
+
+      if (
+        nextAppState === "active" &&
+        hasOpenedSandbox &&
+        currentStatus === "pending"
+      ) {
+        console.log(
+          "🔄 App became active after sandbox - forcing immediate check"
+        );
+
+        // Force immediate transaction check when app becomes active
+        setTimeout(async () => {
+          try {
+            console.log("🔍 Forcing refetch due to app state change");
+            await refetch();
+          } catch (error) {
+            console.error("❌ Error refetching on app state change:", error);
+          }
+        }, 500);
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
+    return () => subscription?.remove();
+  }, [hasOpenedSandbox, currentStatus, refetch]);
+
+  // Manual refresh function with balance update
+  const handleRefreshStatus = async () => {
+    try {
+      console.log("🔄 Manual refresh triggered");
+      setPollingInterval(0); // Stop polling during manual check
+
+      const { data } = await refetch();
+
+      if (data?.checkTransactionStatus?.status === "success") {
+        console.log("✅ Manual refresh detected success");
+        setIsPaymentSuccessful(true);
+        setCurrentStatus("success");
+
+        // Get updated balance
+        const newBalance = data.checkTransactionStatus.user?.saldo || 0;
+
+        Alert.alert(
+          "🎉 Payment Confirmed!",
+          `Your payment has been successfully processed!\n\nNew Balance: Rp ${formatAmountInput(
+            newBalance
+          )}`,
+          [
+            {
+              text: "Continue",
+              onPress: () => {
+                console.log("✅ Manual check completed - navigating home");
+                navigation.navigate("HomeScreen");
+              },
+            },
+          ]
+        );
+      } else if (data?.checkTransactionStatus?.status === "failed") {
+        console.log("❌ Manual refresh detected failure");
+        setCurrentStatus("failed");
+        setPollingInterval(0); // Stop polling
+
+        Alert.alert(
+          "❌ Payment Failed",
+          "Your payment could not be processed. Please try again.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                navigation.goBack();
+              },
+            },
+          ]
+        );
+      } else {
+        // Resume polling if still pending
+        if (data?.checkTransactionStatus?.status === "pending") {
+          console.log("⏳ Still pending - resuming polling");
+          setPollingInterval(5000);
+        }
+        Alert.alert(
+          "Info",
+          "Payment is still being processed. Please wait a moment."
+        );
+      }
+    } catch (error) {
+      console.error("❌ Manual refresh error:", error);
+      Alert.alert("Error", "Failed to refresh status. Please try again.");
+      // Resume polling on error
+      if (!isPaymentSuccessful && currentStatus === "pending") {
+        setPollingInterval(5000);
+      }
+    }
+  };
+
+  // Start smart polling when component mounts - prevent infinite loops
+  useEffect(() => {
+    console.log(
+      `🔄 Polling effect - Success: ${isPaymentSuccessful}, Status: ${currentStatus}, Interval: ${pollingInterval}`
+    );
+
+    // Only start polling if not successful and status is pending and not already polling
+    if (
+      !isPaymentSuccessful &&
+      currentStatus === "pending" &&
+      pollingInterval === 0
+    ) {
+      console.log("🔄 Starting smart polling...");
+      const initialInterval = hasOpenedSandbox ? 2000 : 5000; // More frequent if sandbox was opened
+      setPollingInterval(initialInterval);
+    } else if (
+      isPaymentSuccessful ||
+      currentStatus === "success" ||
+      currentStatus === "failed"
+    ) {
+      console.log("🛑 Stopping polling - payment completed");
+      setPollingInterval(0);
+    }
+
+    // Cleanup polling when component unmounts
+    return () => {
+      console.log("🧹 Component unmounting - stopping polling");
+      setPollingInterval(0);
+    };
+  }, [isPaymentSuccessful, currentStatus, hasOpenedSandbox]);
+
+  // Additional effect to handle immediate success/failure state
+  useEffect(() => {
+    if (
+      (currentStatus === "success" || currentStatus === "failed") &&
+      !isPaymentSuccessful &&
+      currentStatus === "success"
+    ) {
+      console.log("🎉 Detected success status change - updating local state");
+      setIsPaymentSuccessful(true);
+      setPollingInterval(0);
+    }
+  }, [currentStatus, isPaymentSuccessful]);
 
   // Update local state when transaction details are received
   useEffect(() => {
@@ -220,6 +493,9 @@ export default function VirtualAccountScreen() {
         {
           text: "Open App",
           onPress: () => {
+            console.log("🌐 Opening sandbox - setting flag");
+            setHasOpenedSandbox(true); // Set flag when sandbox is opened
+
             Linking.openURL(sandboxURL).catch(() => {
               Alert.alert("Error", "Could not open simulator URL");
             });
@@ -397,6 +673,7 @@ export default function VirtualAccountScreen() {
               console.log(
                 `🎯 Starting VA payment simulation for ${transaction_id}`
               );
+              setPollingInterval(0); // Stop polling during simulation
 
               const result = await simulatePayment({
                 variables: { transaction_id },
@@ -405,17 +682,21 @@ export default function VirtualAccountScreen() {
               if (result.data?.simulatePaymentSuccess?.success) {
                 const { message, user } = result.data.simulatePaymentSuccess;
 
+                // Mark as successful and stop polling
+                setIsPaymentSuccessful(true);
+                setCurrentStatus("success");
+
                 Alert.alert(
                   "🎉 Pembayaran Berhasil!",
                   `${message}\n\nSaldo baru: Rp ${formatAmountInput(
                     user.saldo
-                  )}\n\n✅ Webhook Midtrans telah diproses`,
+                  )}\n\n✅ Saldo telah diperbarui`,
                   [
                     {
                       text: "OK",
                       onPress: () => {
                         console.log(
-                          "💰 VA payment simulation completed successfully"
+                          "💰 Manual VA payment simulation completed successfully"
                         );
                         navigation.navigate("HomeScreen");
                       },
@@ -424,10 +705,18 @@ export default function VirtualAccountScreen() {
                 );
               } else {
                 Alert.alert("Error", "Gagal memproses simulasi pembayaran");
+                // Resume polling on error
+                if (currentStatus === "pending") {
+                  setPollingInterval(5000);
+                }
               }
             } catch (error) {
               console.error("❌ VA simulate payment error:", error);
               Alert.alert("Error", `Simulasi gagal: ${error.message}`);
+              // Resume polling on error
+              if (currentStatus === "pending") {
+                setPollingInterval(5000);
+              }
             }
           },
         },
@@ -813,6 +1102,80 @@ export default function VirtualAccountScreen() {
             </>
           )}
 
+          {/* Payment Status Indicator */}
+          {currentStatus === "pending" && !isPaymentSuccessful && (
+            <View
+              style={[
+                styles.statusContainer,
+                { backgroundColor: "#FEF3C7", borderColor: "#F59E0B" },
+              ]}
+            >
+              <View style={styles.statusHeader}>
+                <Ionicons name="time-outline" size={24} color="#D97706" />
+                <Text style={[styles.statusTitle, { color: "#D97706" }]}>
+                  Waiting for Payment
+                </Text>
+              </View>
+              <Text style={[styles.statusText, { color: "#92400E" }]}>
+                {pollingInterval > 0
+                  ? "Automatically checking payment status every 5 seconds..."
+                  : "Click 'Check Now' to verify your payment status."}
+              </Text>
+
+              {pollingInterval > 0 && (
+                <View style={styles.pollingIndicator}>
+                  <ActivityIndicator size="small" color="#D97706" />
+                  <Text style={[styles.pollingText, { color: "#D97706" }]}>
+                    Checking payment status...
+                  </Text>
+                </View>
+              )}
+
+              {/* Manual Refresh Button */}
+              <TouchableOpacity
+                style={[styles.refreshButton, { backgroundColor: "#F59E0B" }]}
+                onPress={handleRefreshStatus}
+              >
+                <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.refreshButtonText}>Check Now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Payment Success Indicator */}
+          {(isPaymentSuccessful || currentStatus === "success") && (
+            <View
+              style={[
+                styles.statusContainer,
+                { backgroundColor: "#D1FAE5", borderColor: "#10B981" },
+              ]}
+            >
+              <View style={styles.statusHeader}>
+                <Ionicons name="checkmark-circle" size={24} color="#059669" />
+                <Text style={[styles.statusTitle, { color: "#059669" }]}>
+                  Payment Successful!
+                </Text>
+              </View>
+              <Text style={[styles.statusText, { color: "#065F46" }]}>
+                Your payment has been confirmed and your balance has been
+                updated.
+              </Text>
+            </View>
+          )}
+
+          {/* Debug Info (remove in production) */}
+          {__DEV__ && (
+            <View style={styles.debugContainer}>
+              <Text style={styles.debugText}>
+                Status: {currentStatus} | Success:{" "}
+                {isPaymentSuccessful.toString()} | Polling: {pollingInterval}ms
+              </Text>
+              <Text style={styles.debugText}>
+                Transaction ID: {transaction_id}
+              </Text>
+            </View>
+          )}
+
           {/* Confirm Payment Button */}
           <TouchableOpacity
             style={[
@@ -820,20 +1183,33 @@ export default function VirtualAccountScreen() {
               {
                 backgroundColor: simulation
                   ? bankTheme.secondary
+                  : isPaymentSuccessful || currentStatus === "success"
+                  ? "#10B981"
                   : bankTheme.primary,
               },
-              (isLoadingVA || displayVaNumber === "Generating...") &&
+              (isLoadingVA ||
+                displayVaNumber === "Generating..." ||
+                isPaymentSuccessful ||
+                currentStatus === "success") &&
                 styles.confirmButtonDisabled,
             ]}
             onPress={handleManualConfirm}
             disabled={
               simulateLoading ||
               isLoadingVA ||
-              displayVaNumber === "Generating..."
+              displayVaNumber === "Generating..." ||
+              isPaymentSuccessful ||
+              currentStatus === "success"
             }
           >
             <Ionicons
-              name={simulation ? "flash" : "checkmark-circle"}
+              name={
+                isPaymentSuccessful || currentStatus === "success"
+                  ? "checkmark-circle"
+                  : simulation
+                  ? "flash"
+                  : "checkmark-circle"
+              }
               size={24}
               color="#FFFFFF"
             />
@@ -842,6 +1218,8 @@ export default function VirtualAccountScreen() {
                 ? "Processing..."
                 : isLoadingVA || displayVaNumber === "Generating..."
                 ? "Waiting for VA Number..."
+                : isPaymentSuccessful || currentStatus === "success"
+                ? "Payment Completed ✓"
                 : simulation
                 ? "Simulate Payment Success"
                 : "I Have Completed Transfer"}
@@ -1217,5 +1595,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     marginLeft: 8,
+  },
+  statusContainer: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+  },
+  statusHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  statusText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  pollingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pollingText: {
+    fontSize: 12,
+    marginLeft: 8,
+    fontStyle: "italic",
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  refreshButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  debugContainer: {
+    backgroundColor: "#F3F4F6",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#374151",
+    fontFamily: "monospace",
   },
 });

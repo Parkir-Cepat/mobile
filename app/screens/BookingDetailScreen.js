@@ -152,6 +152,38 @@ const GENERATE_ENTRY_QR = gql`
   }
 `;
 
+const CANCEL_BOOKING = gql`
+  mutation CancelBooking($id: ID!) {
+    cancelBooking(id: $id) {
+      refund_amount
+      message
+      user {
+        _id
+        email
+        name
+        saldo
+      }
+      booking {
+        _id
+        user {
+          name
+          email
+        }
+        parking {
+          name
+          address
+        }
+        vehicle_type
+        start_time
+        duration
+        cost
+        status
+        updated_at
+      }
+    }
+  }
+`;
+
 export default function BookingDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -163,7 +195,7 @@ export default function BookingDetailScreen() {
     variables: { getBookingId: bookingId },
     fetchPolicy: "cache-and-network", // For real-time updates
     onError: (error) => {
-      console.log("Get booking error:", error);
+      // Keep error handling but remove console log
     },
   });
 
@@ -273,6 +305,101 @@ export default function BookingDetailScreen() {
     }
   );
 
+  const [cancelBooking, { loading: cancelLoading }] = useMutation(
+    CANCEL_BOOKING,
+    {
+      onCompleted: (data) => {
+        const { refund_amount, message, user, booking } = data.cancelBooking;
+
+        Alert.alert(
+          "🎉 Booking Cancelled!",
+          `${message}\n\nRefund: Rp ${
+            refund_amount?.toLocaleString() || 0
+          }\nCurrent Balance: Rp ${user?.saldo?.toLocaleString() || 0}`,
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                refetch();
+                navigation.navigate("MyBookingsScreen");
+              },
+            },
+          ]
+        );
+      },
+      onError: (error) => {
+        let errorMessage = "Terjadi kesalahan saat membatalkan booking";
+
+        if (error.graphQLErrors && error.graphQLErrors.length > 0) {
+          errorMessage = error.graphQLErrors[0].message;
+        } else if (error.networkError) {
+          if (error.networkError.statusCode === 400) {
+            errorMessage = "Permintaan tidak valid. Silakan coba lagi.";
+          } else if (error.networkError.statusCode === 401) {
+            errorMessage = "Sesi Anda telah berakhir. Silakan login kembali.";
+          } else if (error.networkError.statusCode >= 500) {
+            errorMessage = "Server sedang bermasalah. Silakan coba lagi nanti.";
+          } else {
+            errorMessage = `Network error: ${error.networkError.message}`;
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+
+        Alert.alert("❌ Cancellation Failed", errorMessage);
+      },
+      update: (cache, { data }) => {
+        if (data?.cancelBooking?.booking) {
+          try {
+            // Get the current booking from cache to preserve all fields
+            const existingData = cache.readQuery({
+              query: GET_BOOKING,
+              variables: { getBookingId: bookingId },
+            });
+
+            if (existingData?.getBooking) {
+              // Merge cancelled booking data with existing data to preserve all fields
+              const updatedBooking = {
+                ...existingData.getBooking, // Keep all existing fields including created_at
+                ...data.cancelBooking.booking, // Override with new data
+                user: {
+                  ...existingData.getBooking.user, // Keep existing user data
+                  saldo: data.cancelBooking.user.saldo, // Update saldo
+                },
+                status: "cancelled", // Ensure status is updated
+                updated_at:
+                  data.cancelBooking.booking.updated_at ||
+                  new Date().toISOString(),
+              };
+
+              cache.writeQuery({
+                query: GET_BOOKING,
+                variables: { getBookingId: bookingId },
+                data: {
+                  getBooking: updatedBooking,
+                },
+              });
+            } else {
+              // Fallback: force refetch if we can't read existing data
+              cache.evict({ fieldName: "getBooking" });
+            }
+
+            // Invalidate related caches
+            cache.evict({ fieldName: "getMyActiveBookings" });
+            cache.evict({ fieldName: "getMyBookingHistory" });
+          } catch (cacheError) {
+            // If cache update fails, just invalidate to force refetch
+            cache.evict({
+              id: cache.identify({ __typename: "Booking", _id: bookingId }),
+            });
+            cache.evict({ fieldName: "getMyActiveBookings" });
+            cache.evict({ fieldName: "getMyBookingHistory" });
+          }
+        }
+      },
+    }
+  );
+
   const booking = data?.getBooking;
 
   const getStatusColor = (status) => {
@@ -366,12 +493,39 @@ export default function BookingDetailScreen() {
   };
 
   const handleCancel = () => {
+    // ✅ STATUS VALIDATION: Only allow cancel for pending bookings
+    if (booking.status !== "pending") {
+      Alert.alert(
+        "❌ Cannot Cancel",
+        `Booking with status "${booking.status}" cannot be cancelled. Only pending bookings can be cancelled.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     Alert.alert(
       "Cancel Booking",
-      "Are you sure you want to cancel this booking?",
+      `Are you sure you want to cancel this booking?
+      \n\n✅ No charges will be applied since payment hasn't been made.`,
       [
-        { text: "No", style: "cancel" },
-        { text: "Yes", onPress: () => console.log("Cancel booking") },
+        {
+          text: "No",
+          style: "cancel",
+        },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await cancelBooking({
+                variables: { id: booking._id },
+                errorPolicy: "all",
+              });
+            } catch (mutationError) {
+              // Error will be handled by onError callback
+            }
+          },
+        },
       ]
     );
   };
@@ -725,8 +879,13 @@ export default function BookingDetailScreen() {
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={handleCancel}
+              disabled={cancelLoading}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              {cancelLoading ? (
+                <ActivityIndicator color="#6B7280" size="small" />
+              ) : (
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.payButton}
@@ -751,14 +910,9 @@ export default function BookingDetailScreen() {
 
         {booking.status === "confirmed" && (
           <>
+            {/* Remove cancel button for confirmed status */}
             <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancel}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.payButton}
+              style={styles.fullWidthButton}
               onPress={handleGenerateEntryQR}
               disabled={qrLoading}
             >
@@ -781,6 +935,16 @@ export default function BookingDetailScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </>
+        )}
+
+        {/* Add cancellation info for non-pending bookings */}
+        {booking.status !== "pending" && (
+          <View style={styles.cancellationInfo}>
+            <Ionicons name="information-circle" size={16} color="#6B7280" />
+            <Text style={styles.cancellationInfoText}>
+              Booking can only be cancelled when status is "pending"
+            </Text>
+          </View>
         )}
 
         {booking.status === "active" && (
@@ -1364,5 +1528,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 16,
+  },
+  cancellationInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  cancellationInfoText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginLeft: 6,
+    fontStyle: "italic",
   },
 });

@@ -394,6 +394,20 @@ export default function LandOwnerDashboard() {
           </TouchableOpacity>
 
           <View style={styles.actionButtonsContainer}>
+            {/* ✅ NEW: Add Booking Management Button */}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.bookingButton]}
+              onPress={() =>
+                navigation.navigate("BookingManagementScreen", {
+                  parkingId: item._id,
+                  parkingName: item.name,
+                })
+              }
+            >
+              <Ionicons name="list-outline" size={16} color="#FFF" />
+              <Text style={styles.actionButtonText}>Bookings</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionButton, styles.editButton]}
               onPress={() => handleEditLand(item)}
@@ -1053,6 +1067,10 @@ const styles = StyleSheet.create({
   },
   editButton: {
     backgroundColor: "#3B82F6",
+  },
+  // ✅ NEW: Add booking button style
+  bookingButton: {
+    backgroundColor: "#10B981",
   },
   deleteButton: {
     backgroundColor: "#EF4444",

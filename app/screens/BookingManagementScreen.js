@@ -151,8 +151,26 @@ export default function BookingManagementScreen() {
 
   const formatDate = (dateString) => {
     try {
-      return format(new Date(dateString), "dd MMM yyyy, HH:mm");
-    } catch {
+      // ✅ FIXED: Handle timestamp string or ISO string
+      let date;
+
+      // Check if it's a timestamp (number as string)
+      if (/^\d+$/.test(dateString)) {
+        // Convert timestamp to number and create date
+        date = new Date(parseInt(dateString));
+      } else {
+        // Handle ISO string or other date formats
+        date = new Date(dateString);
+      }
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return "Invalid date";
+      }
+
+      return format(date, "dd MMM yyyy, HH:mm");
+    } catch (error) {
+      console.error("Date formatting error:", error, "Input:", dateString);
       return "Invalid date";
     }
   };
@@ -198,7 +216,10 @@ export default function BookingManagementScreen() {
       <View style={styles.bookingDetails}>
         <View style={styles.detailRow}>
           <Ionicons name="car-outline" size={16} color="#6B7280" />
-          <Text style={styles.detailText}>{item.vehicle_type}</Text>
+          <Text style={styles.detailText}>
+            {item.vehicle_type?.charAt(0)?.toUpperCase() +
+              item.vehicle_type?.slice(1)}
+          </Text>
         </View>
 
         <View style={styles.detailRow}>
@@ -223,9 +244,11 @@ export default function BookingManagementScreen() {
 
       <TouchableOpacity
         style={styles.viewDetailsButton}
-        onPress={() =>
-          Alert.alert("Booking Details", `Booking ID: ${item._id}`)
-        }
+        onPress={() => {
+          // ✅ DEBUG: Log the booking data to see the actual format
+          console.log("Booking item:", JSON.stringify(item, null, 2));
+          Alert.alert("Booking Details", `Booking ID: ${item._id}`);
+        }}
       >
         <Text style={styles.viewDetailsText}>View Details</Text>
         <Ionicons name="chevron-forward-outline" size={16} color="#3B82F6" />

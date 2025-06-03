@@ -79,8 +79,19 @@ const STATUS_OPTIONS = [
 export default function BookingManagementScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { parkingId, parkingName, shouldRefresh, refreshTimestamp } =
-    route.params;
+  const {
+    parkingId,
+    parkingName,
+    shouldRefresh,
+    refreshTimestamp,
+    forceRefetch,
+    initialFilter,
+    selectedStatusOverride,
+    updatedBookingStatus,
+    scrollToBooking,
+    lastAction,
+    fromScanSuccess,
+  } = route.params;
 
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
@@ -94,21 +105,92 @@ export default function BookingManagementScreen() {
         limit: 10,
         offset: 0,
       },
-      fetchPolicy: "cache-and-network",
+      fetchPolicy: "network-only", // ✅ FORCE: Always fetch fresh data
       notifyOnNetworkStatusChange: true,
     }
   );
 
-  // ✅ ADD: Auto refresh when coming from successful scan
-  React.useEffect(() => {
-    if (shouldRefresh && refreshTimestamp) {
-      console.log("🔄 Auto refreshing booking list after successful scan");
-      handleRefresh();
+  // ✅ CRITICAL: Handle filter override from scan
+  useEffect(() => {
+    if (selectedStatusOverride) {
+      console.log(`🎯 FORCE setting filter to: ${selectedStatusOverride}`);
+      setSelectedStatus(selectedStatusOverride);
+    } else if (initialFilter && initialFilter !== "all") {
+      console.log(`🎯 Setting initial filter to: ${initialFilter}`);
+      setSelectedStatus(initialFilter);
     }
-  }, [shouldRefresh, refreshTimestamp]);
+  }, [selectedStatusOverride, initialFilter]);
+
+  // ✅ ENHANCED: Auto refresh from scan with forced refetch
+  useEffect(() => {
+    const handleRefreshFromScan = async () => {
+      if (shouldRefresh && refreshTimestamp) {
+        console.log("🔄 Auto refreshing from scan success");
+        console.log(
+          `📊 From scan: ${fromScanSuccess}, New status: ${updatedBookingStatus}`
+        );
+
+        setRefreshing(true);
+
+        try {
+          // ✅ CRITICAL: Force complete refresh
+          await refetch({
+            parkingId,
+            status: selectedStatus === "all" ? null : selectedStatus,
+            limit: 10,
+            offset: 0,
+          });
+
+          console.log(`✅ Refresh completed for filter: ${selectedStatus}`);
+        } catch (error) {
+          console.error("❌ Refresh error:", error);
+        } finally {
+          setRefreshing(false);
+        }
+      }
+    };
+
+    // ✅ DELAY: Give time for filter to be set first
+    setTimeout(() => {
+      handleRefreshFromScan();
+    }, 200);
+  }, [
+    shouldRefresh,
+    refreshTimestamp,
+    forceRefetch,
+    selectedStatus,
+    fromScanSuccess,
+  ]);
+
+  // ✅ ENHANCED: Force refetch when status filter changes
+  useEffect(() => {
+    const refetchWithNewFilter = async () => {
+      if (selectedStatus && parkingId) {
+        console.log(`🔄 Filter changed to: ${selectedStatus}, refetching...`);
+        setRefreshing(true);
+
+        try {
+          await refetch({
+            parkingId,
+            status: selectedStatus === "all" ? null : selectedStatus,
+            limit: 10,
+            offset: 0,
+          });
+          console.log(`✅ Filter refetch completed for: ${selectedStatus}`);
+        } catch (error) {
+          console.error("❌ Filter refetch error:", error);
+        } finally {
+          setRefreshing(false);
+        }
+      }
+    };
+
+    refetchWithNewFilter();
+  }, [selectedStatus, parkingId]);
 
   // ✅ ADD: Handle manual refresh
   const handleRefresh = async () => {
+    console.log("🔄 Manual refresh triggered");
     setRefreshing(true);
     try {
       await refetch({
@@ -118,28 +200,16 @@ export default function BookingManagementScreen() {
         offset: 0,
       });
     } catch (error) {
-      console.error("Refresh error:", error);
+      console.error("Manual refresh error:", error);
     } finally {
       setRefreshing(false);
     }
   };
 
-  // ✅ UPDATE: Handle status filter change with refetch
-  const handleStatusFilter = async (status) => {
+  // ✅ SIMPLIFIED: Handle status filter change without immediate refetch (handled by useEffect)
+  const handleStatusFilter = (status) => {
+    console.log(`🎯 Changing filter to: ${status}`);
     setSelectedStatus(status);
-    setRefreshing(true);
-    try {
-      await refetch({
-        parkingId,
-        status: status === "all" ? null : status,
-        limit: 10,
-        offset: 0,
-      });
-    } catch (error) {
-      console.error("Filter error:", error);
-    } finally {
-      setRefreshing(false);
-    }
   };
 
   const loadMore = () => {
@@ -204,80 +274,95 @@ export default function BookingManagementScreen() {
     };
   };
 
-  const renderBookingItem = ({ item }) => (
-    <View style={styles.bookingCard}>
-      <View style={styles.bookingHeader}>
-        <View style={styles.userInfo}>
-          <View style={styles.userAvatar}>
-            <Text style={styles.userInitial}>
-              {item.user?.name?.charAt(0)?.toUpperCase() || "?"}
-            </Text>
-          </View>
-          <View>
-            <Text style={styles.userName}>
-              {item.user?.name || "Unknown User"}
-            </Text>
-            <Text style={styles.userEmail}>{item.user?.email}</Text>
-          </View>
-        </View>
+  const renderBookingItem = ({ item }) => {
+    // ✅ ENHANCED: Highlight recently scanned booking
+    const isRecentlyScanned = scrollToBooking === item._id;
 
-        <View style={[styles.statusBadge, getStatusStyle(item.status)]}>
-          <Text
-            style={[
-              styles.statusText,
-              { color: getStatusStyle(item.status).color },
-            ]}
-          >
-            {item.status}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.bookingDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="car-outline" size={16} color="#6B7280" />
-          <Text style={styles.detailText}>
-            {item.vehicle_type?.charAt(0)?.toUpperCase() +
-              item.vehicle_type?.slice(1)}
-          </Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Ionicons name="time-outline" size={16} color="#6B7280" />
-          <Text style={styles.detailText}>
-            {formatDate(item.start_time)} ({item.duration}h)
-          </Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Ionicons name="cash-outline" size={16} color="#6B7280" />
-          <Text style={styles.detailText}>{formatCurrency(item.cost)}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-          <Text style={styles.detailText}>
-            Booked: {formatDate(item.created_at)}
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.viewDetailsButton}
-        onPress={() => {
-          // ✅ Pass current parkingId and parkingName
-          navigation.navigate("BookingDetailsScreen", {
-            booking: item,
-            parkingName: parkingName,
-            parkingId: parkingId, // Add this for easier navigation back
-          });
-        }}
+    return (
+      <View
+        style={[
+          styles.bookingCard,
+          isRecentlyScanned && styles.highlightedBookingCard,
+        ]}
       >
-        <Text style={styles.viewDetailsText}>View Details</Text>
-        <Ionicons name="chevron-forward-outline" size={16} color="#3B82F6" />
-      </TouchableOpacity>
-    </View>
-  );
+        <View style={styles.bookingHeader}>
+          <View style={styles.userInfo}>
+            <View style={styles.userAvatar}>
+              <Text style={styles.userInitial}>
+                {item.user?.name?.charAt(0)?.toUpperCase() || "?"}
+              </Text>
+            </View>
+            <View>
+              <Text style={styles.userName}>
+                {item.user?.name || "Unknown User"}
+              </Text>
+              <Text style={styles.userEmail}>{item.user?.email}</Text>
+            </View>
+          </View>
+
+          <View style={[styles.statusBadge, getStatusStyle(item.status)]}>
+            <Text
+              style={[
+                styles.statusText,
+                { color: getStatusStyle(item.status).color },
+              ]}
+            >
+              {item.status}
+            </Text>
+            {/* ✅ ADD: Recently updated indicator */}
+            {isRecentlyScanned && (
+              <View style={styles.updatedIndicator}>
+                <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.bookingDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons name="car-outline" size={16} color="#6B7280" />
+            <Text style={styles.detailText}>
+              {item.vehicle_type?.charAt(0)?.toUpperCase() +
+                item.vehicle_type?.slice(1)}
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons name="time-outline" size={16} color="#6B7280" />
+            <Text style={styles.detailText}>
+              {formatDate(item.start_time)} ({item.duration}h)
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons name="cash-outline" size={16} color="#6B7280" />
+            <Text style={styles.detailText}>{formatCurrency(item.cost)}</Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+            <Text style={styles.detailText}>
+              Booked: {formatDate(item.created_at)}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.viewDetailsButton}
+          onPress={() => {
+            navigation.navigate("BookingDetailsScreen", {
+              booking: item,
+              parkingName: parkingName,
+              parkingId: parkingId,
+            });
+          }}
+        >
+          <Text style={styles.viewDetailsText}>View Details</Text>
+          <Ionicons name="chevron-forward-outline" size={16} color="#3B82F6" />
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const renderStatsCard = ({ label, value, icon, color }) => (
     <View style={[styles.statsCard, { backgroundColor: `${color}15` }]}>
@@ -376,6 +461,15 @@ export default function BookingManagementScreen() {
         {/* Status Filter */}
         <View style={styles.filterSection}>
           <Text style={styles.sectionTitle}>Filter by Status</Text>
+          {/* ✅ ADD: Success indicator when coming from scan */}
+          {fromScanSuccess && (
+            <View style={styles.scanSuccessIndicator}>
+              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+              <Text style={styles.scanSuccessText}>
+                Scan berhasil! Filter disesuaikan dengan status baru.
+              </Text>
+            </View>
+          )}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.filterRow}>
               {STATUS_OPTIONS.map((option) => (
@@ -386,6 +480,10 @@ export default function BookingManagementScreen() {
                     selectedStatus === option.value &&
                       styles.activeFilterButton,
                     { borderColor: option.color },
+                    // ✅ HIGHLIGHT: Active filter from scan
+                    selectedStatus === option.value &&
+                      fromScanSuccess &&
+                      styles.scanActiveFilter,
                   ]}
                   onPress={() => handleStatusFilter(option.value)}
                 >
@@ -594,6 +692,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  highlightedBookingCard: {
+    borderWidth: 2,
+    borderColor: "#10B981",
+    backgroundColor: "#F0FDF4",
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   bookingHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -629,15 +737,34 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
   statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
+    position: "relative",
   },
   statusText: {
     fontSize: 12,
     fontWeight: "600",
     textTransform: "capitalize",
+  },
+  updatedIndicator: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   bookingDetails: {
     marginBottom: 12,
@@ -657,9 +784,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#EBF4FF",
+    borderRadius: 8,
     borderTopWidth: 1,
     borderTopColor: "#F3F4F6",
+    marginTop: 12,
   },
   viewDetailsText: {
     fontSize: 14,
@@ -720,5 +851,28 @@ const styles = StyleSheet.create({
   retryText: {
     color: "#FFF",
     fontWeight: "600",
+  },
+  // ✅ ADD: New styles for scan success indicators
+  scanSuccessIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  scanSuccessText: {
+    fontSize: 12,
+    color: "#059669",
+    marginLeft: 6,
+    fontWeight: "500",
+  },
+  scanActiveFilter: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 2,
+    transform: [{ scale: 1.05 }],
   },
 });

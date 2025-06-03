@@ -188,20 +188,78 @@ const CANCEL_BOOKING = gql`
   }
 `;
 
-export default function BookingDetailScreen() {
+export default function UserBookingDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { bookingId } = route.params;
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [currentQRData, setCurrentQRData] = useState(null);
+  const [previousStatus, setPreviousStatus] = useState(null);
 
   const { data, loading, error, refetch } = useQuery(GET_BOOKING, {
     variables: { getBookingId: bookingId },
-    fetchPolicy: "cache-and-network", // For real-time updates
+    fetchPolicy: "cache-and-network",
+    notifyOnNetworkStatusChange: true,
+    onCompleted: (data) => {
+      const currentBooking = data?.getBooking;
+      if (currentBooking) {
+        if (previousStatus && previousStatus !== currentBooking.status) {
+          handleStatusChange(previousStatus, currentBooking.status);
+        }
+        setPreviousStatus(currentBooking.status);
+      }
+    },
     onError: (error) => {
-      // Keep error handling but remove console log
+      // Error handling without console log
     },
   });
+
+  const handleStatusChange = (oldStatus, newStatus) => {
+    let message = "";
+    let shouldNavigateBack = false;
+    let targetStatus = newStatus;
+
+    switch (newStatus) {
+      case "active":
+        if (oldStatus === "confirmed") {
+          message =
+            "🎉 Entry QR Successfully Scanned!\n\nYou are now parked. Status updated to Active.";
+          shouldNavigateBack = true;
+          targetStatus = "active";
+        }
+        break;
+      case "completed":
+        if (oldStatus === "active") {
+          message =
+            "✅ Exit QR Successfully Scanned!\n\nParking completed successfully!";
+          shouldNavigateBack = true;
+          targetStatus = "completed";
+        }
+        break;
+      case "cancelled":
+        message = "❌ Booking has been cancelled.";
+        shouldNavigateBack = true;
+        targetStatus = "pending";
+        break;
+    }
+
+    if (message && shouldNavigateBack) {
+      setQrModalVisible(false);
+      setCurrentQRData(null);
+
+      Alert.alert("Status Updated", message, [
+        {
+          text: "OK",
+          onPress: () => {
+            navigation.navigate("MyBookingsScreen", {
+              autoSelectStatus: targetStatus,
+              forceRefresh: true,
+            });
+          },
+        },
+      ]);
+    }
+  };
 
   const [processPayment, { loading: paymentLoading }] = useMutation(
     PROCESS_PAYMENT,
@@ -234,13 +292,12 @@ export default function BookingDetailScreen() {
             {
               text: "OK",
               onPress: () => {
-                // ✅ AUTO GENERATE QR after payment success
                 generateEntryQR({
                   variables: { bookingId: data.confirmBooking._id },
                   onCompleted: () => {
-                    // After QR generation, refresh and navigate back
-                    refetch();
-                    navigation.navigate("MyBookingsScreen");
+                    navigation.navigate("MyBookingsScreen", {
+                      autoSelectStatus: "confirmed",
+                    });
                   },
                 });
               },
@@ -251,10 +308,8 @@ export default function BookingDetailScreen() {
       onError: (error) => {
         Alert.alert("Payment Failed", error.message);
       },
-      // ✅ UPDATE: Enhanced cache update
       update: (cache, { data }) => {
         if (data?.confirmBooking) {
-          // Update current booking cache
           cache.writeQuery({
             query: GET_BOOKING,
             variables: { getBookingId: bookingId },
@@ -262,10 +317,8 @@ export default function BookingDetailScreen() {
               getBooking: data.confirmBooking,
             },
           });
-
-          // ✅ FORCE REFRESH: Invalidate MyBookingsScreen cache
           cache.evict({ fieldName: "getMyActiveBookings" });
-          cache.gc(); // Garbage collect to ensure fresh data
+          cache.gc();
         }
       },
     }
@@ -276,26 +329,23 @@ export default function BookingDetailScreen() {
     {
       onCompleted: (data) => {
         const qrData = data.generateEntryQR;
-        // ✅ SIMPLIFIED: Auto-show QR without additional alert
-        showQRCode(qrData.qrCode, qrData.instructions);
-
-        // ✅ AUTO REFRESH: Update booking data
+        showQRCode(
+          qrData.qrCode,
+          "Show this QR code at parking entrance for scanning. This booking will become active after scanning."
+        );
         refetch();
       },
       onError: (error) => {
         Alert.alert("QR Generation Failed", error.message);
       },
-      // ✅ UPDATE: Enhanced cache update
       update: (cache, { data }) => {
         if (data?.generateEntryQR?.booking) {
-          // Get current booking data
           const existingBooking = cache.readQuery({
             query: GET_BOOKING,
             variables: { getBookingId: bookingId },
           });
 
           if (existingBooking?.getBooking) {
-            // Update with new entry_qr
             const updatedBooking = {
               ...existingBooking.getBooking,
               entry_qr: data.generateEntryQR.qrCode,
@@ -310,8 +360,6 @@ export default function BookingDetailScreen() {
               },
             });
           }
-
-          // ✅ FORCE REFRESH: Invalidate MyBookingsScreen cache
           cache.evict({ fieldName: "getMyActiveBookings" });
           cache.gc();
         }
@@ -334,8 +382,9 @@ export default function BookingDetailScreen() {
             {
               text: "OK",
               onPress: () => {
-                refetch();
-                navigation.navigate("MyBookingsScreen");
+                navigation.navigate("MyBookingsScreen", {
+                  autoSelectStatus: "pending",
+                });
               },
             },
           ]
@@ -365,22 +414,20 @@ export default function BookingDetailScreen() {
       update: (cache, { data }) => {
         if (data?.cancelBooking?.booking) {
           try {
-            // Get the current booking from cache to preserve all fields
             const existingData = cache.readQuery({
               query: GET_BOOKING,
               variables: { getBookingId: bookingId },
             });
 
             if (existingData?.getBooking) {
-              // Merge cancelled booking data with existing data to preserve all fields
               const updatedBooking = {
-                ...existingData.getBooking, // Keep all existing fields including created_at
-                ...data.cancelBooking.booking, // Override with new data
+                ...existingData.getBooking,
+                ...data.cancelBooking.booking,
                 user: {
-                  ...existingData.getBooking.user, // Keep existing user data
-                  saldo: data.cancelBooking.user.saldo, // Update saldo
+                  ...existingData.getBooking.user,
+                  saldo: data.cancelBooking.user.saldo,
                 },
-                status: "cancelled", // Ensure status is updated
+                status: "cancelled",
                 updated_at:
                   data.cancelBooking.booking.updated_at ||
                   new Date().toISOString(),
@@ -394,15 +441,11 @@ export default function BookingDetailScreen() {
                 },
               });
             } else {
-              // Fallback: force refetch if we can't read existing data
               cache.evict({ fieldName: "getBooking" });
             }
-
-            // Invalidate related caches
             cache.evict({ fieldName: "getMyActiveBookings" });
             cache.evict({ fieldName: "getMyBookingHistory" });
           } catch (cacheError) {
-            // If cache update fails, just invalidate to force refetch
             cache.evict({
               id: cache.identify({ __typename: "Booking", _id: bookingId }),
             });
@@ -489,7 +532,6 @@ export default function BookingDetailScreen() {
         {
           text: "Pay Now",
           onPress: () => {
-            // Check if user has enough balance
             if (booking.user.saldo < booking.cost) {
               Alert.alert(
                 "Insufficient Balance",
@@ -498,7 +540,6 @@ export default function BookingDetailScreen() {
               );
               return;
             }
-
             confirmBooking({ variables: { confirmBookingId: booking._id } });
           },
         },
@@ -507,7 +548,6 @@ export default function BookingDetailScreen() {
   };
 
   const handleCancel = () => {
-    // ✅ STATUS VALIDATION: Only allow cancel for pending bookings
     if (booking.status !== "pending") {
       Alert.alert(
         "❌ Cannot Cancel",
@@ -536,7 +576,7 @@ export default function BookingDetailScreen() {
                 errorPolicy: "all",
               });
             } catch (mutationError) {
-              // Error will be handled by onError callback
+              // Error handled by onError callback
             }
           },
         },
@@ -570,6 +610,34 @@ export default function BookingDetailScreen() {
     setCurrentQRData(null);
   };
 
+  const handleQRModalDone = () => {
+    setQrModalVisible(false);
+    setCurrentQRData(null);
+
+    let targetStatus = "confirmed";
+
+    if (booking) {
+      switch (booking.status) {
+        case "confirmed":
+          targetStatus = "confirmed";
+          break;
+        case "active":
+          targetStatus = "active";
+          break;
+        case "completed":
+          targetStatus = "completed";
+          break;
+        default:
+          targetStatus = booking.status;
+      }
+    }
+
+    navigation.navigate("MyBookingsScreen", {
+      autoSelectStatus: targetStatus,
+      forceRefresh: true,
+    });
+  };
+
   const getStatusMessage = (status) => {
     switch (status) {
       case "pending":
@@ -587,12 +655,30 @@ export default function BookingDetailScreen() {
     }
   };
 
-  // ✅ ADD: Auto-refresh when screen focus changes
+  // ✅ ADD: Manual refresh function for better control
+  const handleManualRefresh = async () => {
+    try {
+      await refetch();
+    } catch (error) {
+      // Error handled by onError callback
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
-      refetch();
-    }, [refetch])
+      // ✅ ENHANCED: Only refresh when screen comes into focus, not continuously
+      handleManualRefresh();
+      if (booking && !previousStatus) {
+        setPreviousStatus(booking.status);
+      }
+    }, [booking, previousStatus])
   );
+
+  React.useEffect(() => {
+    return () => {
+      // Component cleanup
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -639,7 +725,7 @@ export default function BookingDetailScreen() {
           <Text style={styles.headerTitle}>Booking Details</Text>
           <TouchableOpacity
             style={styles.refreshButton}
-            onPress={() => refetch()}
+            onPress={handleManualRefresh}
           >
             <Ionicons name="refresh" size={20} color="#FFFFFF" />
           </TouchableOpacity>
@@ -800,21 +886,75 @@ export default function BookingDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>QR Codes</Text>
             <View style={styles.qrCard}>
-              {booking.status === "confirmed" && (
-                <View style={styles.qrSection}>
-                  <Text style={styles.qrText}>Entry QR Code</Text>
-                  {booking.entry_qr ? (
+              <>
+                {booking.status === "confirmed" && (
+                  <View style={styles.qrSection}>
+                    <Text style={styles.qrText}>Entry QR Code</Text>
+                    {booking.entry_qr ? (
+                      <View style={styles.qrGenerated}>
+                        <Ionicons name="qr-code" size={48} color="#10B981" />
+                        <Text style={styles.qrGeneratedText}>
+                          Entry QR Generated
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.viewQrButton}
+                          onPress={() =>
+                            showQRCode(
+                              booking.entry_qr,
+                              "Show this QR code at parking entrance"
+                            )
+                          }
+                        >
+                          <Text style={styles.viewQrButtonText}>
+                            View QR Code
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.qrPlaceholder}>
+                        <Ionicons
+                          name="qr-code-outline"
+                          size={48}
+                          color="#6B7280"
+                        />
+                        <Text style={styles.qrPlaceholderText}>
+                          Generate entry QR code below
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {booking.status === "active" && booking.entry_qr && (
+                  <View style={styles.qrSection}>
+                    <Text style={styles.qrText}>Entry QR Used</Text>
+                    <View style={styles.qrUsed}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={48}
+                        color="#10B981"
+                      />
+                      <Text style={styles.qrUsedText}>
+                        Successfully entered parking
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {booking.exit_qr && (
+                  <View style={styles.qrSection}>
+                    <Text style={styles.qrText}>Exit QR Code</Text>
                     <View style={styles.qrGenerated}>
-                      <Ionicons name="qr-code" size={48} color="#10B981" />
+                      <Ionicons name="qr-code" size={48} color="#F59E0B" />
                       <Text style={styles.qrGeneratedText}>
-                        Entry QR Generated
+                        Exit QR Generated
                       </Text>
                       <TouchableOpacity
                         style={styles.viewQrButton}
                         onPress={() =>
                           showQRCode(
-                            booking.entry_qr,
-                            "Show this QR code at parking entrance"
+                            booking.exit_qr,
+                            "Show this QR code at parking exit"
                           )
                         }
                       >
@@ -823,59 +963,9 @@ export default function BookingDetailScreen() {
                         </Text>
                       </TouchableOpacity>
                     </View>
-                  ) : (
-                    <View style={styles.qrPlaceholder}>
-                      <Ionicons
-                        name="qr-code-outline"
-                        size={48}
-                        color="#6B7280"
-                      />
-                      <Text style={styles.qrPlaceholderText}>
-                        Generate entry QR code below
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {booking.status === "active" && booking.entry_qr && (
-                <View style={styles.qrSection}>
-                  <Text style={styles.qrText}>Entry QR Used</Text>
-                  <View style={styles.qrUsed}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={48}
-                      color="#10B981"
-                    />
-                    <Text style={styles.qrUsedText}>
-                      Successfully entered parking
-                    </Text>
                   </View>
-                </View>
-              )}
-
-              {booking.exit_qr && (
-                <View style={styles.qrSection}>
-                  <Text style={styles.qrText}>Exit QR Code</Text>
-                  <View style={styles.qrGenerated}>
-                    <Ionicons name="qr-code" size={48} color="#F59E0B" />
-                    <Text style={styles.qrGeneratedText}>
-                      Exit QR Generated
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.viewQrButton}
-                      onPress={() =>
-                        showQRCode(
-                          booking.exit_qr,
-                          "Show this QR code at parking exit"
-                        )
-                      }
-                    >
-                      <Text style={styles.viewQrButtonText}>View QR Code</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
+                )}
+              </>
             </View>
           </View>
         )}
@@ -931,7 +1021,6 @@ export default function BookingDetailScreen() {
 
         {booking.status === "confirmed" && (
           <>
-            {/* ✅ IMPROVED: Show QR section immediately if entry_qr exists */}
             {booking.entry_qr ? (
               <TouchableOpacity
                 style={styles.fullWidthButton}
@@ -982,7 +1071,6 @@ export default function BookingDetailScreen() {
           </>
         )}
 
-        {/* Add cancellation info for non-pending bookings */}
         {booking.status !== "pending" && (
           <View style={styles.cancellationInfo}>
             <Ionicons name="information-circle" size={16} color="#6B7280" />
@@ -1078,7 +1166,6 @@ export default function BookingDetailScreen() {
                   <TouchableOpacity
                     style={styles.shareButton}
                     onPress={() => {
-                      // Implement share functionality if needed
                       Alert.alert("QR Code", "QR Code ready to scan!");
                     }}
                   >
@@ -1088,7 +1175,7 @@ export default function BookingDetailScreen() {
 
                   <TouchableOpacity
                     style={styles.doneButton}
-                    onPress={closeQRModal}
+                    onPress={handleQRModalDone}
                   >
                     <Text style={styles.doneButtonText}>Done</Text>
                   </TouchableOpacity>
@@ -1463,7 +1550,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: "500",
   },
-  // QR Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",

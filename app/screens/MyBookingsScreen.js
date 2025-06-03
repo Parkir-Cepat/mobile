@@ -11,10 +11,15 @@ import {
   FlatList,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useFocusEffect,
+  useRoute,
+} from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useQuery } from "@apollo/client";
 
+// ✅ SIMPLIFIED: Use the corrected getMyActiveBookings query
 const GET_MY_ACTIVE_BOOKINGS = gql`
   query GetMyActiveBookings {
     getMyActiveBookings {
@@ -60,17 +65,42 @@ const GET_MY_ACTIVE_BOOKINGS = gql`
 
 export default function MyBookingsScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const [refreshing, setRefreshing] = useState(false);
-  // ✅ CHANGED: Default to pending instead of all
-  const [selectedStatus, setSelectedStatus] = useState("pending");
 
+  // ✅ UPDATED: Handle auto-select status from navigation params
+  const [selectedStatus, setSelectedStatus] = useState(() => {
+    // Check if we have a status parameter from navigation
+    const paramStatus = route.params?.autoSelectStatus;
+    return paramStatus || "pending";
+  });
+
+  // ✅ SIMPLIFIED: Remove fallback query since main query now works
   const { data, loading, error, refetch } = useQuery(GET_MY_ACTIVE_BOOKINGS, {
     fetchPolicy: "cache-and-network",
     onError: (error) => {
       console.log("Get my bookings error:", error);
     },
+    onCompleted: (data) => {
+      // ✅ DEBUG: Log booking data to verify all statuses are included
+      console.log("📊 Bookings loaded:", {
+        total: data?.getMyActiveBookings?.length || 0,
+        statuses:
+          data?.getMyActiveBookings?.reduce((acc, booking) => {
+            acc[booking.status] = (acc[booking.status] || 0) + 1;
+            return acc;
+          }, {}) || {},
+        bookings:
+          data?.getMyActiveBookings?.map((b) => ({
+            id: b._id.slice(-8),
+            status: b.status,
+            parking: b.parking.name,
+          })) || [],
+      });
+    },
   });
 
+  // ✅ SIMPLIFIED: Use single data source
   const allBookings = data?.getMyActiveBookings || [];
 
   // ✅ ADD: Filter bookings based on selected status
@@ -79,12 +109,13 @@ export default function MyBookingsScreen() {
     return booking.status === selectedStatus;
   });
 
-  // ✅ REMOVED: All filter option
+  // ✅ ENHANCED: Add cancelled to status filters
   const statusFilters = [
     { label: "Pending", value: "pending", color: "#F59E0B" },
     { label: "Confirmed", value: "confirmed", color: "#3B82F6" },
     { label: "Active", value: "active", color: "#10B981" },
     { label: "Completed", value: "completed", color: "#059669" },
+    { label: "Cancelled", value: "cancelled", color: "#EF4444" }, // ✅ ADD: Include cancelled
   ];
 
   // ✅ UPDATE: Get status counts (no all option)
@@ -92,16 +123,47 @@ export default function MyBookingsScreen() {
     return allBookings.filter((booking) => booking.status === status).length;
   };
 
+  // ADD: Listen for navigation parameter changes
+  React.useEffect(() => {
+    if (route.params?.autoSelectStatus) {
+      setSelectedStatus(route.params.autoSelectStatus);
+      // Force refresh data when status changes
+      refetch();
+      // Clear the parameter to avoid re-triggering
+      navigation.setParams({ autoSelectStatus: undefined });
+    }
+  }, [route.params?.autoSelectStatus, navigation, refetch]);
+
   // Auto refresh when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      refetch();
-    }, [refetch])
+      console.log("👁️ Screen focused, refreshing data...");
+
+      refetch({ fetchPolicy: "cache-and-network" }).then(() => {
+        console.log("🔄 Focus refresh completed");
+      });
+
+      // Check for auto-select status from navigation params
+      if (route.params?.autoSelectStatus) {
+        console.log(
+          "🎯 Focus: Auto-selecting status:",
+          route.params.autoSelectStatus
+        );
+        setSelectedStatus(route.params.autoSelectStatus);
+      }
+    }, [refetch, route.params?.autoSelectStatus])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
+    try {
+      await refetch({
+        fetchPolicy: "network-only",
+        notifyOnNetworkStatusChange: true,
+      });
+    } catch (error) {
+      console.log("Refresh error:", error);
+    }
     setRefreshing(false);
   };
 
@@ -194,7 +256,7 @@ export default function MyBookingsScreen() {
   };
 
   const handleBookingPress = (bookingId) => {
-    navigation.navigate("BookingDetailScreen", { bookingId });
+    navigation.navigate("UserBookingDetailScreen", { bookingId });
   };
 
   const renderBookingCard = ({ item: booking }) => (
@@ -342,10 +404,7 @@ export default function MyBookingsScreen() {
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>My Bookings</Text>
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={() => refetch()}
-          >
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
             <Ionicons name="refresh" size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
@@ -643,12 +702,13 @@ const styles = StyleSheet.create({
   // ✅ FIXED: Reduced spacing between filter and cards
   filterContainer: {
     backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
+    paddingVertical: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
   filterContent: {
     paddingHorizontal: 16,
+    paddingButtom: 8,
     gap: 2,
   },
   filterButton: {

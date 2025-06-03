@@ -21,9 +21,10 @@ import QRISPaymentScreen from "../screens/QRISPaymentScreen";
 import VirtualAccountScreen from "../screens/VirtualAccountScreen";
 import EWalletPaymentScreen from "../screens/EWalletPaymentScreen";
 import BookingFormScreen from "../screens/BookingFormScreen";
-import BookingDetailScreen from "../screens/BookingDetailScreen";
+
 import MyBookingsScreen from "../screens/MyBookingsScreen";
 import AppTest from "../test";
+import UserBookingDetailScreen from "../screens/UserBookingDetailScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -52,6 +53,11 @@ const HomeNavigator = () => {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="VirtualAccountScreen"
+        component={VirtualAccountScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="QRISPaymentScreen"
         component={QRISPaymentScreen}
         options={{ headerShown: false }}
@@ -61,19 +67,15 @@ const HomeNavigator = () => {
         component={EWalletPaymentScreen}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="VirtualAccountScreen"
-        component={VirtualAccountScreen}
-        options={{ headerShown: false }}
-      />
+
       <Stack.Screen
         name="BookingFormScreen"
         component={BookingFormScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
-        name="BookingDetailScreen"
-        component={BookingDetailScreen}
+        name="UserBookingDetailScreen"
+        component={UserBookingDetailScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import { makeRedirectUri } from "expo-auth-session";
 import { GOOGLE_CLIENT_ID, ANDROID_CLIENT_ID, IOS_CLIENT_ID } from "@env";
-import { authContext } from "../context/authContext";
+import { useAuth } from "../context/authContext";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -57,10 +57,9 @@ export default function LoginScreen() {
   const navigation = useNavigation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);  const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const { setIsSignIn, setRole } = useContext(authContext);
+  const { setIsSignIn, setRole, setUser } = useAuth();
   const [loginGoogle] = useMutation(GOOGLE_LOGIN);
   const [loginUser] = useMutation(LOGIN_USER);
 
@@ -132,15 +131,14 @@ export default function LoginScreen() {
             password,
           },
         },
-      });
-
-      await SecureStore.setItemAsync("access_token", data.login.token);
+      });      await SecureStore.setItemAsync("access_token", data.login.token);
       await SecureStore.setItemAsync("user_role", data.login.user.role);
       await SecureStore.setItemAsync(
         "user_data",
         JSON.stringify(data.login.user)
       );
       setRole(data.login.user.role);
+      setUser(data.login.user);
       setIsSignIn(true);
 
       setEmail("");

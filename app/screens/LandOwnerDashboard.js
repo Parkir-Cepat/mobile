@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import { PanResponder } from "react-native";
 import {
   StyleSheet,
   Text,
   View,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Image,
@@ -15,12 +15,16 @@ import {
   ActivityIndicator,
   Animated,
 } from "react-native";
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { authContext } from "../context/authContext";
+import { useAuth } from "../context/authContext";
 import * as SecureStore from "expo-secure-store";
+import ChatBubble from "../components/ChatBubble";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 // Dummy data untuk owner
 const OWNER_DATA = {
@@ -92,12 +96,34 @@ const DELETE_PARKING = gql`
 
 export default function LandOwnerDashboard() {
   const navigation = useNavigation();
-  const { setIsSignIn } = useContext(authContext);
+  const { setIsSignIn, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLand, setSelectedLand] = useState(null);
   const [statsView, setStatsView] = useState("income");
   const [ownerData, setOwnerData] = useState(null);
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dx > 50 && !chatDrawerOpen) {
+          setChatDrawerOpen(true);
+        } else if (gestureState.dx < -50 && chatDrawerOpen) {
+          setChatDrawerOpen(false);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (Math.abs(gestureState.dx) < 50) {
+          setChatDrawerOpen(false);
+        }
+      }
+    })
+  ).current;
 
   const { data, loading, error, refetch } = useQuery(GET_ALL_PARKING);
   const {
@@ -204,7 +230,6 @@ export default function LandOwnerDashboard() {
   const formatCurrency = (amount) => {
     return `Rp ${amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
   };
-
   // Get stats from query instead of dummy data
   const stats = statsData?.getOwnerStats || {
     totalBalance: 0,
@@ -445,252 +470,258 @@ export default function LandOwnerDashboard() {
     }
     return words[0].charAt(0).toUpperCase() + words[1].charAt(0).toUpperCase();
   };
-
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Header */}
-      <LinearGradient
-        colors={["#FE7A3A", "#FF9A62"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <View style={styles.profileSection}>
-          <View style={styles.profileLeft}>
-            <View style={styles.profilePic}>
-              <Text style={styles.initialsText}>
-                {getInitials(ownerData?.name)}
-              </Text>
-            </View>
-            <View>
-              <Text style={styles.greeting}>Hello,</Text>
-              <Text style={styles.ownerName}>{ownerData?.name}</Text>
-              <View style={styles.roleBadge}>
-                <Ionicons name="business-outline" size={12} color="#FFF" />
-                <Text style={styles.roleText}>Land Owner</Text>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          {/* Chat Bubble */}
+          <ChatBubble />
+
+          {/* Header */}
+          <LinearGradient
+            colors={["#FE7A3A", "#FF9A62"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <View style={styles.profileSection}>
+              <View style={styles.profileLeft}>
+                <View style={styles.profilePic}>
+                  <Text style={styles.initialsText}>
+                    {getInitials(ownerData?.name)}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.greeting}>Hello,</Text>
+                  <Text style={styles.ownerName}>{ownerData?.name}</Text>
+                  <View style={styles.roleBadge}>
+                    <Ionicons name="business-outline" size={12} color="#FFF" />
+                    <Text style={styles.roleText}>Land Owner</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  style={styles.logoutButton}
+                  onPress={handleLogout}
+                >
+                  <Ionicons name="log-out-outline" size={24} color="#FFF" />
+                </TouchableOpacity>
               </View>
             </View>
-          </View>
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={24} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.balanceCard}>
-          <View>
-            <Text style={styles.balanceLabel}>Total Balance</Text>
-            <Text style={styles.balanceAmount}>
-              {statsLoading
-                ? "Loading..."
-                : formatCurrency(stats.currentBalance)}
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.withdrawButton}>
-            <Ionicons name="cash-outline" size={18} color="#FE7A3A" />
-            <Text style={styles.withdrawText}>Withdraw</Text>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Stats Overview */}
-        <View style={styles.statsSection}>
-          <View style={styles.statsHeader}>
-            <Text style={styles.sectionTitle}>Stats Overview</Text>
-            <View style={styles.statsToggle}>
-              <TouchableOpacity
-                style={[
-                  styles.statsToggleButton,
-                  statsView === "income" && styles.activeStatsToggle,
-                ]}
-                onPress={() => setStatsView("income")}
-              >
-                <Text
-                  style={[
-                    styles.statsToggleText,
-                    statsView === "income" && styles.activeStatsToggleText,
-                  ]}
-                >
-                  Income
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.statsToggleButton,
-                  statsView === "traffic" && styles.activeStatsToggle,
-                ]}
-                onPress={() => setStatsView("traffic")}
-              >
-                <Text
-                  style={[
-                    styles.statsToggleText,
-                    statsView === "traffic" && styles.activeStatsToggleText,
-                  ]}
-                >
-                  Traffic
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.statsCards}>
-            {statsView === "income" ? (
-              <>
-                <View
-                  style={[styles.statsCard, { backgroundColor: "#FFF5F0" }]}
-                >
-                  <View
-                    style={[styles.statsIconBg, { backgroundColor: "#FDDED3" }]}
-                  >
-                    <Ionicons name="cash-outline" size={24} color="#FE7A3A" />
-                  </View>
-                  <Text style={styles.statsValue}>
-                    {statsLoading
-                      ? "Loading..."
-                      : formatCurrency(stats.totalIncome)}
-                  </Text>
-                  <Text style={styles.statsLabel}>Total Income</Text>
-                </View>
-
-                <View
-                  style={[styles.statsCard, { backgroundColor: "#EDF5FF" }]}
-                >
-                  <View
-                    style={[styles.statsIconBg, { backgroundColor: "#D7E8FF" }]}
-                  >
-                    <Ionicons name="card-outline" size={24} color="#1E3A8A" />
-                  </View>
-                  <Text style={styles.statsValue}>
-                    {statsLoading
-                      ? "Loading..."
-                      : formatCurrency(stats.currentBalance)}
-                  </Text>
-                  <Text style={styles.statsLabel}>Current Balance</Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <View
-                  style={[styles.statsCard, { backgroundColor: "#F3F9FF" }]}
-                >
-                  <View
-                    style={[styles.statsIconBg, { backgroundColor: "#D9EDFF" }]}
-                  >
-                    <Ionicons name="car-outline" size={24} color="#2563EB" />
-                  </View>
-                  <Text style={styles.statsValue}>
-                    {statsLoading ? "Loading..." : stats.totalBookings}
-                  </Text>
-                  <Text style={styles.statsLabel}>Total Bookings</Text>
-                </View>
-
-                <View
-                  style={[styles.statsCard, { backgroundColor: "#F0FFF4" }]}
-                >
-                  <View
-                    style={[styles.statsIconBg, { backgroundColor: "#DBFDE6" }]}
-                  >
-                    <Ionicons name="star-outline" size={24} color="#059669" />
-                  </View>
-                  <Text style={styles.statsValue}>
-                    {statsLoading ? "Loading..." : stats.averageRating}
-                  </Text>
-                  <Text style={styles.statsLabel}>Average Rating</Text>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-
-        {/* My Parking Lands */}
-        <View style={styles.landsSection}>
-          <View style={styles.landsSectionHeader}>
-            <Text style={styles.sectionTitle}>My Parking Lands</Text>
-            <Text style={styles.landCount}>
-              {data?.getMyParkings?.length || 0} lands
-            </Text>
-          </View>
-
-          <FlatList
-            data={data?.getMyParkings || []}
-            keyExtractor={(item) => item._id}
-            renderItem={renderLandItem}
-            scrollEnabled={false}
-            contentContainerStyle={styles.landsList}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Ionicons name="car-outline" size={60} color="#D1D5DB" />
-                <Text style={styles.emptyStateTitle}>No Parking Lands</Text>
-                <Text style={styles.emptyStateDescription}>
-                  You haven't added any parking lands yet.
+            <View style={styles.balanceCard}>
+              <View>
+                <Text style={styles.balanceLabel}>Total Balance</Text>
+                <Text style={styles.balanceAmount}>
+                  {statsLoading
+                    ? "Loading..."
+                    : formatCurrency(stats.currentBalance)}
                 </Text>
               </View>
+              <TouchableOpacity style={styles.withdrawButton}>
+                <Ionicons name="cash-outline" size={18} color="#FE7A3A" />
+                <Text style={styles.withdrawText}>Withdraw</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
-          />
+          >
+            {/* Stats Overview */}
+            <View style={styles.statsSection}>
+              <View style={styles.statsHeader}>
+                <Text style={styles.sectionTitle}>Stats Overview</Text>
+                <View style={styles.statsToggle}>
+                  <TouchableOpacity
+                    style={[
+                      styles.statsToggleButton,
+                      statsView === "income" && styles.activeStatsToggle,
+                    ]}
+                    onPress={() => setStatsView("income")}
+                  >
+                    <Text
+                      style={[
+                        styles.statsToggleText,
+                        statsView === "income" && styles.activeStatsToggleText,
+                      ]}
+                    >
+                      Income
+                    </Text>
+                  </TouchableOpacity>
 
-          <TouchableOpacity style={styles.addButton} onPress={handleAddNewLand}>
-            <LinearGradient
-              colors={["#FE7A3A", "#FF9A62"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.addButtonGradient}
-            >
-              <Ionicons name="add" size={24} color="#FFF" />
-              <Text style={styles.addButtonText}>Add New Parking Land</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+                  <TouchableOpacity
+                    style={[
+                      styles.statsToggleButton,
+                      statsView === "traffic" && styles.activeStatsToggle,
+                    ]}
+                    onPress={() => setStatsView("traffic")}
+                  >
+                    <Text
+                      style={[
+                        styles.statsToggleText,
+                        statsView === "traffic" && styles.activeStatsToggleText,
+                      ]}
+                    >
+                      Traffic
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-      {/* Delete Confirmation Modal */}
-      <Modal visible={showDeleteConfirm} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Ionicons name="alert-circle-outline" size={60} color="#EF4444" />
-            <Text style={styles.modalTitle}>Delete Parking Land</Text>
-            <Text style={styles.modalDescription}>
-              Are you sure you want to delete "{selectedLand?.name}"? This
-              action cannot be undone.
-            </Text>
+              <View style={styles.statsCards}>
+                {statsView === "income" ? (
+                  <>
+                    <View
+                      style={[styles.statsCard, { backgroundColor: "#FFF5F0" }]}
+                    >
+                      <View
+                        style={[styles.statsIconBg, { backgroundColor: "#FDDED3" }]}
+                      >
+                        <Ionicons name="cash-outline" size={24} color="#FE7A3A" />
+                      </View>
+                      <Text style={styles.statsValue}>
+                        {statsLoading
+                          ? "Loading..."
+                          : formatCurrency(stats.totalIncome)}
+                      </Text>
+                      <Text style={styles.statsLabel}>Total Income</Text>
+                    </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowDeleteConfirm(false)}
-                disabled={deleteLoading}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.deleteConfirmButton]}
-                onPress={confirmDelete}
-                disabled={deleteLoading}
-              >
-                {deleteLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                    <View
+                      style={[styles.statsCard, { backgroundColor: "#EDF5FF" }]}
+                    >
+                      <View
+                        style={[styles.statsIconBg, { backgroundColor: "#D7E8FF" }]}
+                      >
+                        <Ionicons name="card-outline" size={24} color="#1E3A8A" />
+                      </View>
+                      <Text style={styles.statsValue}>
+                        {statsLoading
+                          ? "Loading..."
+                          : formatCurrency(stats.currentBalance)}
+                      </Text>
+                      <Text style={styles.statsLabel}>Current Balance</Text>
+                    </View>
+                  </>
                 ) : (
-                  <Text style={styles.deleteConfirmText}>Delete</Text>
+                  <>
+                    <View
+                      style={[styles.statsCard, { backgroundColor: "#F3F9FF" }]}
+                    >
+                      <View
+                        style={[styles.statsIconBg, { backgroundColor: "#D9EDFF" }]}
+                      >
+                        <Ionicons name="car-outline" size={24} color="#2563EB" />
+                      </View>
+                      <Text style={styles.statsValue}>
+                        {statsLoading ? "Loading..." : stats.totalBookings}
+                      </Text>
+                      <Text style={styles.statsLabel}>Total Bookings</Text>
+                    </View>
+
+                    <View
+                      style={[styles.statsCard, { backgroundColor: "#F0FFF4" }]}
+                    >
+                      <View
+                        style={[styles.statsIconBg, { backgroundColor: "#DBFDE6" }]}
+                      >
+                        <Ionicons name="star-outline" size={24} color="#059669" />
+                      </View>
+                      <Text style={styles.statsValue}>
+                        {statsLoading ? "Loading..." : stats.averageRating}
+                      </Text>
+                      <Text style={styles.statsLabel}>Average Rating</Text>
+                    </View>
+                  </>
                 )}
+              </View>
+            </View>
+
+            {/* My Parking Lands */}
+            <View style={styles.landsSection}>
+              <View style={styles.landsSectionHeader}>
+                <Text style={styles.sectionTitle}>My Parking Lands</Text>
+                <Text style={styles.landCount}>
+                  {data?.getMyParkings?.length || 0} lands
+                </Text>
+              </View>
+
+              <FlatList
+                data={data?.getMyParkings || []}
+                keyExtractor={(item) => item._id}
+                renderItem={renderLandItem}
+                scrollEnabled={false}
+                contentContainerStyle={styles.landsList}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Ionicons name="car-outline" size={60} color="#D1D5DB" />
+                    <Text style={styles.emptyStateTitle}>No Parking Lands</Text>
+                    <Text style={styles.emptyStateDescription}>
+                      You haven't added any parking lands yet.
+                    </Text>
+                  </View>
+                }
+              />
+
+              <TouchableOpacity style={styles.addButton} onPress={handleAddNewLand}>
+                <LinearGradient
+                  colors={["#FE7A3A", "#FF9A62"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.addButtonGradient}
+                >
+                  <Ionicons name="add" size={24} color="#FFF" />
+                  <Text style={styles.addButtonText}>Add New Parking Land</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+          </ScrollView>
+
+          {/* Delete Confirmation Modal */}
+          <Modal visible={showDeleteConfirm} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Ionicons name="alert-circle-outline" size={60} color="#EF4444" />
+                <Text style={styles.modalTitle}>Delete Parking Land</Text>
+                <Text style={styles.modalDescription}>
+                  Are you sure you want to delete "{selectedLand?.name}"? This
+                  action cannot be undone.
+                </Text>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => setShowDeleteConfirm(false)}
+                    disabled={deleteLoading}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.deleteConfirmButton]}
+                    onPress={confirmDelete}
+                    disabled={deleteLoading}
+                  >
+                    {deleteLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.deleteConfirmText}>Delete</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </SafeAreaView>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
@@ -1181,5 +1212,30 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 16,
+  },
+  // Chat drawer related styles
+  swipeIndicator: {
+    position: "absolute",
+    right: 0,
+    top: "50%",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    zIndex: 100,
+  },
+  swipeText: {
+    marginLeft: 8,
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "500",
   },
 });

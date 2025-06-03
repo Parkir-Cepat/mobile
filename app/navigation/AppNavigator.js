@@ -7,24 +7,20 @@ import { Ionicons } from "@expo/vector-icons";
 import LoginScreen from "../screens/LoginScreens";
 import HomeScreen from "../screens/HomeScreen";
 import SearchParkingScreen from "../screens/SearchParkingScreen";
-// import ProfileScreen from "../screens/ProfileScreen";
-// import ParkingHistoryScreen from "../screens/ParkingHistoryScreen";
-// import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import * as SecureStore from "expo-secure-store";
 import TopUpScreen from "../screens/TopUpScreen";
 import OwnerNavigator from "./OwnerNavigator";
 import { authContext } from "../context/authContext";
-import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import UserParkingDetailScreen from "../screens/UserParkingDetailScreen";
 import QRISPaymentScreen from "../screens/QRISPaymentScreen";
 import VirtualAccountScreen from "../screens/VirtualAccountScreen";
 import EWalletPaymentScreen from "../screens/EWalletPaymentScreen";
 import BookingFormScreen from "../screens/BookingFormScreen";
-
 import MyBookingsScreen from "../screens/MyBookingsScreen";
-import AppTest from "../test";
 import UserBookingDetailScreen from "../screens/UserBookingDetailScreen";
+import UserProfile from "../screens/UserProfile";
+import BookingHistoryScreen from "../screens/BookingHistoryScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -87,6 +83,23 @@ const HomeNavigator = () => {
   );
 };
 
+const ProfileNavigtor = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="UserProfile"
+        component={UserProfile}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="TopUpScreen"
+        component={TopUpScreen}
+        options={{ headerShown: false }}
+      />
+    </Stack.Navigator>
+  );
+};
+
 function BottomTabNavigator() {
   return (
     <Tab.Navigator
@@ -112,6 +125,7 @@ function BottomTabNavigator() {
         name="HomeScreen"
         component={HomeNavigator}
         options={{
+          title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
@@ -126,24 +140,26 @@ function BottomTabNavigator() {
           ),
         }}
       />
-      {/* <Tab.Screen
-        name="History"
-        component={ParkingHistoryScreen}
+      <Tab.Screen
+        name="HistoryScreen"
+        component={BookingHistoryScreen}
         options={{
+          title: "History",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time-outline" size={size} color={color} />
           ),
         }}
-      /> */}
-      {/* <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
+      />
+      <Tab.Screen
+        name="ProfileScreen"
+        component={ProfileNavigtor}
         options={{
+          title: "Profile",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),
         }}
-      /> */}
+      />
     </Tab.Navigator>
   );
 }

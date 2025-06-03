@@ -13,7 +13,11 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { gql, useQuery, useMutation } from "@apollo/client";
 import QRCode from "react-native-qrcode-svg";
@@ -230,10 +234,15 @@ export default function BookingDetailScreen() {
             {
               text: "OK",
               onPress: () => {
-                // Update cache and refresh multiple screens
-                refetch();
-                // Navigate back to refresh MyBookingsScreen
-                navigation.navigate("MyBookingsScreen");
+                // ✅ AUTO GENERATE QR after payment success
+                generateEntryQR({
+                  variables: { bookingId: data.confirmBooking._id },
+                  onCompleted: () => {
+                    // After QR generation, refresh and navigate back
+                    refetch();
+                    navigation.navigate("MyBookingsScreen");
+                  },
+                });
               },
             },
           ]
@@ -242,10 +251,10 @@ export default function BookingDetailScreen() {
       onError: (error) => {
         Alert.alert("Payment Failed", error.message);
       },
-      // Update cache for real-time updates
+      // ✅ UPDATE: Enhanced cache update
       update: (cache, { data }) => {
         if (data?.confirmBooking) {
-          // Update the current booking cache
+          // Update current booking cache
           cache.writeQuery({
             query: GET_BOOKING,
             variables: { getBookingId: bookingId },
@@ -254,8 +263,9 @@ export default function BookingDetailScreen() {
             },
           });
 
-          // Invalidate MyBookingsScreen cache to force refresh
+          // ✅ FORCE REFRESH: Invalidate MyBookingsScreen cache
           cache.evict({ fieldName: "getMyActiveBookings" });
+          cache.gc(); // Garbage collect to ensure fresh data
         }
       },
     }
@@ -266,40 +276,44 @@ export default function BookingDetailScreen() {
     {
       onCompleted: (data) => {
         const qrData = data.generateEntryQR;
-        Alert.alert(
-          "Entry QR Generated! 📱",
-          `${qrData.instructions}\n\nValid until: ${new Date(
-            qrData.expiresAt
-          ).toLocaleString("id-ID")}`,
-          [
-            {
-              text: "View QR Code",
-              onPress: () => showQRCode(qrData.qrCode, qrData.instructions),
-            },
-            {
-              text: "OK",
-              onPress: () => refetch(),
-            },
-          ]
-        );
+        // ✅ SIMPLIFIED: Auto-show QR without additional alert
+        showQRCode(qrData.qrCode, qrData.instructions);
+
+        // ✅ AUTO REFRESH: Update booking data
+        refetch();
       },
       onError: (error) => {
         Alert.alert("QR Generation Failed", error.message);
       },
+      // ✅ UPDATE: Enhanced cache update
       update: (cache, { data }) => {
         if (data?.generateEntryQR?.booking) {
-          // Update the current booking cache with new entry_qr
-          cache.writeQuery({
+          // Get current booking data
+          const existingBooking = cache.readQuery({
             query: GET_BOOKING,
             variables: { getBookingId: bookingId },
-            data: {
-              getBooking: {
-                ...booking,
-                entry_qr: data.generateEntryQR.qrCode,
-                updated_at: data.generateEntryQR.booking.updated_at,
-              },
-            },
           });
+
+          if (existingBooking?.getBooking) {
+            // Update with new entry_qr
+            const updatedBooking = {
+              ...existingBooking.getBooking,
+              entry_qr: data.generateEntryQR.qrCode,
+              updated_at: data.generateEntryQR.booking.updated_at,
+            };
+
+            cache.writeQuery({
+              query: GET_BOOKING,
+              variables: { getBookingId: bookingId },
+              data: {
+                getBooking: updatedBooking,
+              },
+            });
+          }
+
+          // ✅ FORCE REFRESH: Invalidate MyBookingsScreen cache
+          cache.evict({ fieldName: "getMyActiveBookings" });
+          cache.gc();
         }
       },
     }
@@ -572,6 +586,13 @@ export default function BookingDetailScreen() {
         return "";
     }
   };
+
+  // ✅ ADD: Auto-refresh when screen focus changes
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   if (loading) {
     return (
@@ -910,30 +931,54 @@ export default function BookingDetailScreen() {
 
         {booking.status === "confirmed" && (
           <>
-            {/* Remove cancel button for confirmed status */}
-            <TouchableOpacity
-              style={styles.fullWidthButton}
-              onPress={handleGenerateEntryQR}
-              disabled={qrLoading}
-            >
-              <LinearGradient
-                colors={["#10B981", "#059669"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.payGradient}
+            {/* ✅ IMPROVED: Show QR section immediately if entry_qr exists */}
+            {booking.entry_qr ? (
+              <TouchableOpacity
+                style={styles.fullWidthButton}
+                onPress={() =>
+                  showQRCode(
+                    booking.entry_qr,
+                    "Show this QR code at parking entrance"
+                  )
+                }
               >
-                {qrLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="qr-code" size={20} color="#FFFFFF" />
-                    <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
-                      {booking.entry_qr ? "Regenerate QR" : "Generate Entry QR"}
-                    </Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={["#10B981", "#059669"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payGradient}
+                >
+                  <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+                  <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                    View Entry QR Code
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.fullWidthButton}
+                onPress={handleGenerateEntryQR}
+                disabled={qrLoading}
+              >
+                <LinearGradient
+                  colors={["#10B981", "#059669"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payGradient}
+                >
+                  {qrLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+                      <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                        Generate Entry QR
+                      </Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </>
         )}
 

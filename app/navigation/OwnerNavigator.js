@@ -4,6 +4,7 @@ import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import LandOwnerDashboard from "../screens/LandOwnerDashboard";
 import EditParkingScreen from "../screens/EditParkingScreen";
 import BookingManagementScreen from "../screens/BookingManagementScreen";
+import BookingDetailsScreen from "../screens/BookingDetailsScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -33,6 +34,11 @@ export default function OwnerNavigator() {
       <Stack.Screen
         name="BookingManagementScreen"
         component={BookingManagementScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BookingDetailsScreen"
+        component={BookingDetailsScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

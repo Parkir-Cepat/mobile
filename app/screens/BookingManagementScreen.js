@@ -79,7 +79,8 @@ const STATUS_OPTIONS = [
 export default function BookingManagementScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { parkingId, parkingName } = route.params;
+  const { parkingId, parkingName, shouldRefresh, refreshTimestamp } =
+    route.params;
 
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [refreshing, setRefreshing] = useState(false);
@@ -89,36 +90,55 @@ export default function BookingManagementScreen() {
     {
       variables: {
         parkingId,
-        status: selectedStatus,
+        status: selectedStatus === "all" ? null : selectedStatus,
         limit: 10,
         offset: 0,
       },
       fetchPolicy: "cache-and-network",
+      notifyOnNetworkStatusChange: true,
     }
   );
 
-  const onRefresh = async () => {
+  // ✅ ADD: Auto refresh when coming from successful scan
+  React.useEffect(() => {
+    if (shouldRefresh && refreshTimestamp) {
+      console.log("🔄 Auto refreshing booking list after successful scan");
+      handleRefresh();
+    }
+  }, [shouldRefresh, refreshTimestamp]);
+
+  // ✅ ADD: Handle manual refresh
+  const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await refetch();
+      await refetch({
+        parkingId,
+        status: selectedStatus === "all" ? null : selectedStatus,
+        limit: 10,
+        offset: 0,
+      });
     } catch (error) {
-      console.error("Error refreshing:", error);
+      console.error("Refresh error:", error);
     } finally {
       setRefreshing(false);
     }
   };
 
+  // ✅ UPDATE: Handle status filter change with refetch
   const handleStatusFilter = async (status) => {
     setSelectedStatus(status);
+    setRefreshing(true);
     try {
       await refetch({
         parkingId,
-        status,
+        status: status === "all" ? null : status,
         limit: 10,
         offset: 0,
       });
     } catch (error) {
-      console.error("Error filtering:", error);
+      console.error("Filter error:", error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -245,9 +265,12 @@ export default function BookingManagementScreen() {
       <TouchableOpacity
         style={styles.viewDetailsButton}
         onPress={() => {
-          // ✅ DEBUG: Log the booking data to see the actual format
-          console.log("Booking item:", JSON.stringify(item, null, 2));
-          Alert.alert("Booking Details", `Booking ID: ${item._id}`);
+          // ✅ Pass current parkingId and parkingName
+          navigation.navigate("BookingDetailsScreen", {
+            booking: item,
+            parkingName: parkingName,
+            parkingId: parkingId, // Add this for easier navigation back
+          });
         }}
       >
         <Text style={styles.viewDetailsText}>View Details</Text>
@@ -312,7 +335,7 @@ export default function BookingManagementScreen() {
       <ScrollView
         style={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
         {/* Stats Overview */}

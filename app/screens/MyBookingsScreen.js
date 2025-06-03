@@ -61,15 +61,36 @@ const GET_MY_ACTIVE_BOOKINGS = gql`
 export default function MyBookingsScreen() {
   const navigation = useNavigation();
   const [refreshing, setRefreshing] = useState(false);
+  // ✅ CHANGED: Default to pending instead of all
+  const [selectedStatus, setSelectedStatus] = useState("pending");
 
   const { data, loading, error, refetch } = useQuery(GET_MY_ACTIVE_BOOKINGS, {
-    fetchPolicy: "cache-and-network", // For real-time updates
+    fetchPolicy: "cache-and-network",
     onError: (error) => {
       console.log("Get my bookings error:", error);
     },
   });
 
-  const bookings = data?.getMyActiveBookings || [];
+  const allBookings = data?.getMyActiveBookings || [];
+
+  // ✅ ADD: Filter bookings based on selected status
+  const filteredBookings = allBookings.filter((booking) => {
+    if (selectedStatus === "all") return true;
+    return booking.status === selectedStatus;
+  });
+
+  // ✅ REMOVED: All filter option
+  const statusFilters = [
+    { label: "Pending", value: "pending", color: "#F59E0B" },
+    { label: "Confirmed", value: "confirmed", color: "#3B82F6" },
+    { label: "Active", value: "active", color: "#10B981" },
+    { label: "Completed", value: "completed", color: "#059669" },
+  ];
+
+  // ✅ UPDATE: Get status counts (no all option)
+  const getStatusCount = (status) => {
+    return allBookings.filter((booking) => booking.status === status).length;
+  };
 
   // Auto refresh when screen comes into focus
   useFocusEffect(
@@ -271,9 +292,12 @@ export default function MyBookingsScreen() {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="car-outline" size={64} color="#9CA3AF" />
-      <Text style={styles.emptyTitle}>No Active Bookings</Text>
+      <Text style={styles.emptyTitle}>
+        No {selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}{" "}
+        Bookings
+      </Text>
       <Text style={styles.emptySubtitle}>
-        You don't have any active parking bookings yet.
+        You don't have any {selectedStatus} bookings.
       </Text>
       <TouchableOpacity
         style={styles.findParkingButton}
@@ -329,13 +353,71 @@ export default function MyBookingsScreen() {
         {/* Stats */}
         <View style={styles.statsContainer}>
           <Text style={styles.statsText}>
-            {bookings.length} Active Booking{bookings.length !== 1 ? "s" : ""}
+            {getStatusCount(selectedStatus)}{" "}
+            {selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}{" "}
+            Booking{getStatusCount(selectedStatus) !== 1 ? "s" : ""}
           </Text>
         </View>
       </LinearGradient>
 
+      {/* ✅ ADD: Status Filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterContainer}
+        contentContainerStyle={styles.filterContent}
+      >
+        {statusFilters.map((filter) => (
+          <TouchableOpacity
+            key={filter.value}
+            style={[
+              styles.filterButton,
+              selectedStatus === filter.value && styles.filterButtonActive,
+              {
+                backgroundColor:
+                  selectedStatus === filter.value
+                    ? filter.color + "20"
+                    : "#F3F4F6",
+                borderColor:
+                  selectedStatus === filter.value ? filter.color : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setSelectedStatus(filter.value)}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                selectedStatus === filter.value && {
+                  color: filter.color,
+                  fontWeight: "600",
+                },
+              ]}
+            >
+              {filter.label}
+            </Text>
+            {getStatusCount(filter.value) > 0 && (
+              <View
+                style={[
+                  styles.filterBadge,
+                  {
+                    backgroundColor:
+                      selectedStatus === filter.value
+                        ? filter.color
+                        : "#9CA3AF",
+                  },
+                ]}
+              >
+                <Text style={styles.filterBadgeText}>
+                  {getStatusCount(filter.value)}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* Content */}
-      {bookings.length === 0 ? (
+      {filteredBookings.length === 0 ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           refreshControl={
@@ -346,7 +428,7 @@ export default function MyBookingsScreen() {
         </ScrollView>
       ) : (
         <FlatList
-          data={bookings}
+          data={filteredBookings}
           renderItem={renderBookingCard}
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.listContent}
@@ -404,7 +486,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 8,
   },
   bookingCard: {
     backgroundColor: "#FFFFFF",
@@ -556,5 +638,55 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  // ✅ FIXED: Reduced spacing between filter and cards
+  filterContainer: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  filterContent: {
+    paddingHorizontal: 16,
+    gap: 2,
+  },
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFF",
+    marginRight: 10,
+    height: 32,
+  },
+  filterButtonActive: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  filterText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#6B7280",
+  },
+  filterBadge: {
+    marginLeft: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 8,
+    minWidth: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });

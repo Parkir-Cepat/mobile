@@ -100,17 +100,33 @@ export const SEND_MESSAGE = gql`
 `;
 
 export const DELETE_ROOM = gql`
-  mutation DeleteRoom($roomId: ID!) {
-    deleteRoom(room_id: $roomId) {
-      success
-      message
-    }
+  mutation DeleteRoom($id: ID!) {
+    deleteRoom(id: $id)
   }
 `;
 
 // Subscriptions
+export const ROOM_UPDATED = gql`
+  subscription RoomUpdated($userId: ID!) {
+    roomUpdated(userId: $userId) {
+      _id
+      name
+      participants {
+        _id
+        name
+        email
+      }
+      last_message {
+        message
+        created_at
+      }
+      participant_count
+    }
+  }
+`;
+
 export const MESSAGE_SENT = gql`
-  subscription OnMessageReceived($roomId: ID!) {
+  subscription MessageReceived($roomId: ID!) {
     messageReceived(room_id: $roomId) {
       _id
       message

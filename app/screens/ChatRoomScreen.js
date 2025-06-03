@@ -14,7 +14,7 @@ import { useQuery, useMutation, useSubscription } from '@apollo/client';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/authContext';
-import { 
+import {
   GET_CHAT_MESSAGES,
   SEND_MESSAGE,
   MESSAGE_SENT
@@ -23,34 +23,94 @@ import {
 const ChatRoomScreen = ({ route, navigation }) => {
   const { roomId, contactName } = route.params;
   const { user } = useAuth();
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
   const flatListRef = useRef();
-    // Get chat messages
-  const { data, loading, error, refetch } = useQuery(GET_CHAT_MESSAGES, {
+  
+  // Get chat messages with enhanced caching strategy
+  const { 
+    data, 
+    loading, 
+    error, 
+    refetch 
+  } = useQuery(GET_CHAT_MESSAGES, {
     variables: { roomId },
+    fetchPolicy: 'cache-and-network',
+    nextFetchPolicy: 'cache-first'
   });
 
-  // Subscribe to new messages
-  const { data: subData } = useSubscription(MESSAGE_SENT, {
-    variables: { roomId },
-  });
+  // Send message mutation with optimistic response
+  const [sendMessage] = useMutation(SEND_MESSAGE, {
+    optimisticResponse: (vars) => ({
+      sendMessage: {
+        _id: `temp-${Date.now()}`,
+        message: vars.input.message,
+        sender_id: user?._id,
+        created_at: new Date().toISOString(),
+        __typename: 'Chat'
+      }
+    }),
+    update: (cache, { data: mutationData }) => {
+      const existingMessages = cache.readQuery({
+        query: GET_CHAT_MESSAGES,
+        variables: { roomId }
+      })?.getRoomMessages || [];
 
-  // Send message mutation
-  const [sendMessage] = useMutation(SEND_MESSAGE);
-  // Update messages when new message received via subscription
-  useEffect(() => {
-    if (subData?.messageReceived) {
-      // Refetch messages to update the list
-      refetch();
+      const newMessage = mutationData.sendMessage;
+      
+      cache.writeQuery({
+        query: GET_CHAT_MESSAGES,
+        variables: { roomId },
+        data: {
+          getRoomMessages: [newMessage, ...existingMessages]
+        }
+      });
     }
-  }, [subData]);
+  });
 
-  const messages = data?.getRoomMessages || [];
+  // Subscribe to new messages with proper error handling and duplicate prevention
+  useSubscription(MESSAGE_SENT, {
+    variables: { roomId },
+    onData: ({ data: subData }) => {
+      const newMessage = subData?.data?.messageReceived;
+      if (newMessage) {
+        setMessages(prev => {
+          // Check if message already exists to avoid duplicates
+          const messageExists = prev.some(msg => msg._id === newMessage._id);
+          if (!messageExists) {
+            // Add new message and maintain order (newest first)
+            return [newMessage, ...prev];
+          }
+          return prev;
+        });
+      }
+    },
+    onError: (error) => {
+      console.error('Subscription error:', error);
+    }
+  });
+
+  // Update messages when query data changes
+  useEffect(() => {
+    if (data?.getRoomMessages) {
+      setMessages(data.getRoomMessages);
+    }
+  }, [data]);
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
 
-    try {      await sendMessage({
+    try {
+      const optimisticId = `temp-${Date.now()}`;
+      // Add optimistic message
+      setMessages(prev => [{
+        _id: optimisticId,
+        message: message.trim(),
+        sender_id: user?._id,
+        created_at: new Date().toISOString(),
+      }, ...prev]);
+
+      await sendMessage({
         variables: {
           input: {
             room_id: roomId,

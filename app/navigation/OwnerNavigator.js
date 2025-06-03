@@ -1,46 +1,59 @@
+import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import AddNewLandScreen from "../screens/AddNewLandScreen";
-import ParkingDetailScreen from "../screens/ParkingDetailScreen";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import LandOwnerDashboard from "../screens/LandOwnerDashboard";
+import ParkingDetailScreen from "../screens/ParkingDetailScreen";
+import AddNewLandScreen from "../screens/AddNewLandScreen";
 import EditParkingScreen from "../screens/EditParkingScreen";
 import BookingManagementScreen from "../screens/BookingManagementScreen";
 import BookingDetailsScreen from "../screens/BookingDetailsScreen";
+import ChatRoomScreen from "../screens/ChatRoomScreen";
+import ChatScreen from "../screens/ChatScreen";
 
 const Stack = createNativeStackNavigator();
 
 export default function OwnerNavigator() {
   return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="DashboardScreen"
-        component={LandOwnerDashboard}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="ParkingDetailsScreen"
-        component={ParkingDetailScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="AddNewLandScreen"
-        component={AddNewLandScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="EditParkingScreen"
-        component={EditParkingScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="BookingManagementScreen"
-        component={BookingManagementScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="BookingDetailsScreen"
-        component={BookingDetailsScreen}
-        options={{ headerShown: false }}
-      />
-    </Stack.Navigator>
+    <SafeAreaProvider>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "slide_from_right",
+        }}
+      >
+        <Stack.Screen
+          name="DashboardScreen"
+          component={LandOwnerDashboard}
+        />
+        <Stack.Screen
+          name="ParkingDetailsScreen"
+          component={ParkingDetailScreen}
+        />
+        <Stack.Screen
+          name="AddNewLandScreen"
+          component={AddNewLandScreen}
+        />
+        <Stack.Screen
+          name="EditParkingScreen"
+          component={EditParkingScreen}
+        />
+        <Stack.Screen
+          name="BookingManagementScreen"
+          component={BookingManagementScreen}
+        />
+        <Stack.Screen
+          name="BookingDetailsScreen"
+          component={BookingDetailsScreen}
+        />
+        <Stack.Screen
+          name="ChatScreen"
+          component={ChatScreen}
+        />
+        <Stack.Screen
+          name="ChatRoomScreen"
+          component={ChatRoomScreen}
+        />
+      </Stack.Navigator>
+    </SafeAreaProvider>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,21 +7,19 @@ import { Ionicons } from "@expo/vector-icons";
 import LoginScreen from "../screens/LoginScreens";
 import HomeScreen from "../screens/HomeScreen";
 import SearchParkingScreen from "../screens/SearchParkingScreen";
-// import ProfileScreen from "../screens/ProfileScreen";
-// import ParkingHistoryScreen from "../screens/ParkingHistoryScreen";
-// import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import * as SecureStore from "expo-secure-store";
 import TopUpScreen from "../screens/TopUpScreen";
 import OwnerNavigator from "./OwnerNavigator";
-import { authContext } from "../context/authContext";
+import { useAuth } from "../context/authContext";
 import ParkingDetailScreen from "../screens/ParkingDetailScreen";
 import UserParkingDetailScreen from "../screens/UserParkingDetailScreen";
 import QRISPaymentScreen from "../screens/QRISPaymentScreen";
 import VirtualAccountScreen from "../screens/VirtualAccountScreen";
 import EWalletPaymentScreen from "../screens/EWalletPaymentScreen";
 import BookingFormScreen from "../screens/BookingFormScreen";
-
+import ChatScreen from "../screens/ChatScreen";
+import ChatRoomScreen from "../screens/ChatRoomScreen";
 import MyBookingsScreen from "../screens/MyBookingsScreen";
 import AppTest from "../test";
 import UserBookingDetailScreen from "../screens/UserBookingDetailScreen";
@@ -77,10 +75,20 @@ const HomeNavigator = () => {
         name="UserBookingDetailScreen"
         component={UserBookingDetailScreen}
         options={{ headerShown: false }}
-      />
+      />      
       <Stack.Screen
         name="MyBookingsScreen"
         component={MyBookingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatScreen"
+        component={ChatScreen} 
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatRoomScreen"
+        component={ChatRoomScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
@@ -166,19 +174,31 @@ const SearchNavigator = () => {
 };
 
 function AppNavigator() {
-  const { isSignIn, setIsSignIn, role, setRole } = useContext(authContext);
+  const { isSignIn, setIsSignIn, role, setRole, setUser } = useAuth();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const checkAuthStatus = async () => {
       const token = await SecureStore.getItemAsync("access_token");
       const savedRole = await SecureStore.getItemAsync("user_role");
+      const savedUserData = await SecureStore.getItemAsync("user_data");
+      
       if (token && savedRole) {
         setRole(savedRole);
         setIsSignIn(true);
+        
+        if (savedUserData) {
+          try {
+            const userData = JSON.parse(savedUserData);
+            setUser(userData);
+          } catch (error) {
+            console.error('Error parsing user data:', error);
+          }
+        }
       } else {
         setIsSignIn(false);
         setRole(null);
+        setUser(null);
       }
       setLoading(false);
     };

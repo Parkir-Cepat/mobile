@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ import * as Location from "expo-location";
 import { gql, useQuery } from "@apollo/client";
 import * as SecureStore from "expo-secure-store";
 import { LinearGradient } from "expo-linear-gradient";
-import { authContext } from "../context/authContext";
+import { useAuth } from "../context/authContext";
 import { StatusBar } from "expo-status-bar";
 import ParkingCard from "../components/ParkingCard";
 
@@ -118,7 +118,7 @@ export default function HomeScreen() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeBookings, setActiveBookings] = useState(DUMMY_ACTIVE_BOOKINGS);
-  const { setIsSignIn } = useContext(authContext);
+  const { setIsSignIn } = useAuth();
   const [userData, setUserData] = useState(null);
 
   // Get user profile data

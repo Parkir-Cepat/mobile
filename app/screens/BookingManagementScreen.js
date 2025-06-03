@@ -79,6 +79,29 @@ const STATUS_OPTIONS = [
 export default function BookingManagementScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+
+  // ✅ ADD: Debug navigation params on mount
+  useEffect(() => {
+    console.log("📱 BookingManagementScreen mounted with params:", {
+      parkingId,
+      parkingName,
+      shouldRefresh,
+      fromScanSuccess,
+      selectedStatusOverride,
+      updatedBookingStatus,
+    });
+  }, []);
+
+  // ✅ ADD: Navigation focus listener for debugging
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      console.log("📱 BookingManagementScreen focused");
+      console.log("📱 Current route params:", route.params);
+    });
+
+    return unsubscribe;
+  }, [navigation, route.params]);
+
   const {
     parkingId,
     parkingName,

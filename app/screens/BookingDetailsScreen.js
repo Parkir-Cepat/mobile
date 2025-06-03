@@ -468,35 +468,28 @@ export default function BookingDetailsScreen() {
           {
             text: "OK",
             onPress: () => {
-              // ✅ FIXED: Navigate to MyBookingsScreen with correct filter
               const newStatus = result.booking?.status;
-              console.log(
-                `🎯 Navigating to MyBookingsScreen with status: ${newStatus}`
-              );
 
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: "MyBookingsScreen",
-                    params: {
-                      // ✅ CRITICAL: Set filter based on new status
-                      initialFilter: newStatus,
-                      shouldRefresh: true,
-                      refreshTimestamp: Date.now(),
-                      lastScannedBooking: result.booking?._id,
-                      scanAction:
-                        booking.status === "confirmed"
-                          ? "entry_scan"
-                          : "exit_scan",
-                    },
-                  },
-                ],
+              // ✅ FIXED: Use navigate instead of reset to avoid navigation errors
+              navigation.navigate("BookingManagementScreen", {
+                parkingId: booking.parking_id || route.params?.parkingId,
+                parkingName: booking.parking?.name || route.params?.parkingName,
+                // ✅ CRITICAL: Set filter based on new status
+                selectedStatusOverride: newStatus, // This will force the filter
+                shouldRefresh: true,
+                refreshTimestamp: Date.now(),
+                forceRefetch: true,
+                lastScannedBooking: result.booking?._id,
+                scrollToBooking: result.booking?._id,
+                updatedBookingStatus: newStatus,
+                fromScanSuccess: true,
+                scanAction:
+                  booking.status === "confirmed" ? "entry_scan" : "exit_scan",
               });
             },
           },
         ]);
-      }, 100); // Small delay to prevent race conditions
+      }, 100);
     } else {
       // ✅ CRITICAL: Use setTimeout for error alerts too
       setTimeout(() => {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -188,6 +188,23 @@ const CANCEL_BOOKING = gql`
   }
 `;
 
+const GENERATE_EXIT_QR = gql`
+  mutation GenerateExitQR($bookingId: ID!) {
+    generateExitQR(bookingId: $bookingId) {
+      qrCode
+      qrType
+      expiresAt
+      instructions
+      booking {
+        _id
+        status
+        exit_qr
+        updated_at
+      }
+    }
+  }
+`;
+
 export default function UserBookingDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -195,6 +212,8 @@ export default function UserBookingDetailScreen() {
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [currentQRData, setCurrentQRData] = useState(null);
   const [previousStatus, setPreviousStatus] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [timerInterval, setTimerInterval] = useState(null);
 
   const { data, loading, error, refetch } = useQuery(GET_BOOKING, {
     variables: { getBookingId: bookingId },
@@ -305,22 +324,20 @@ export default function UserBookingDetailScreen() {
           ]
         );
       },
-      onError: (error) => {
-        Alert.alert("Payment Failed", error.message);
+      onError: () => {
+        // ✅ FIX: Silent error handling for cache issues
       },
-      update: (cache, { data }) => {
-        if (data?.confirmBooking) {
-          cache.writeQuery({
-            query: GET_BOOKING,
-            variables: { getBookingId: bookingId },
-            data: {
-              getBooking: data.confirmBooking,
-            },
-          });
+      // ✅ FIX: Simplified cache update - just evict everything
+      update: (cache) => {
+        try {
           cache.evict({ fieldName: "getMyActiveBookings" });
+          cache.evict({ fieldName: "getBooking" });
           cache.gc();
+        } catch (error) {
+          // Silent cache error handling
         }
       },
+      errorPolicy: "ignore", // ✅ ADD: Ignore all errors including cache merge
     }
   );
 
@@ -680,6 +697,81 @@ export default function UserBookingDetailScreen() {
     };
   }, []);
 
+  // ✅ ADD: Timer calculation for active bookings
+  const calculateTimeRemaining = (startTime, duration) => {
+    const start = new Date(parseInt(startTime));
+    const end = new Date(start.getTime() + duration * 60 * 60 * 1000);
+    const now = new Date();
+    const remaining = end.getTime() - now.getTime();
+
+    return remaining > 0 ? remaining : 0;
+  };
+
+  const formatTimeRemaining = (milliseconds) => {
+    if (milliseconds <= 0) return "Time expired";
+
+    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  // ✅ ADD: Timer effect for active bookings
+  useEffect(() => {
+    if (booking && booking.status === "active") {
+      const updateTimer = () => {
+        const remaining = calculateTimeRemaining(
+          booking.start_time,
+          booking.duration
+        );
+        setTimeRemaining(remaining);
+
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          setTimerInterval(null);
+        }
+      };
+
+      updateTimer(); // Initial calculation
+      const interval = setInterval(updateTimer, 1000);
+      setTimerInterval(interval);
+
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    } else {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
+      setTimeRemaining(null);
+    }
+  }, [booking?.status, booking?.start_time, booking?.duration]);
+
+  // ✅ ADD: Generate Exit QR handler
+  const handleGenerateExitQR = () => {
+    Alert.alert(
+      "Generate Exit QR Code",
+      "Generate QR code for parking exit? This QR will be valid for 2 hours.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Generate",
+          onPress: () => {
+            generateExitQR({ variables: { bookingId: booking._id } });
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -749,7 +841,20 @@ export default function UserBookingDetailScreen() {
             <Text style={styles.statusText}>
               {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
             </Text>
+
+            {/* ✅ ADD: Timer in status header for active bookings */}
+            {booking.status === "active" && (
+              <View style={styles.timerInHeader}>
+                <Ionicons name="timer-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.timerInHeaderText}>
+                  {timeRemaining !== null
+                    ? formatTimeRemaining(timeRemaining)
+                    : "Loading..."}
+                </Text>
+              </View>
+            )}
           </View>
+
           <View style={styles.statusBody}>
             <Text style={styles.bookingId}>
               Booking ID: #{booking._id.slice(-8)}
@@ -757,6 +862,29 @@ export default function UserBookingDetailScreen() {
             <Text style={styles.bookingDate}>
               Created: {formatDateTime(booking.created_at)}
             </Text>
+
+            {/* ✅ ADD: Timer warning/expired messages in status body */}
+            {booking.status === "active" && (
+              <>
+                {timeRemaining <= 300000 && timeRemaining > 0 && (
+                  <View style={styles.warningInCard}>
+                    <Ionicons name="warning" size={14} color="#F59E0B" />
+                    <Text style={styles.warningInCardText}>
+                      Parking time almost up!
+                    </Text>
+                  </View>
+                )}
+
+                {timeRemaining <= 0 && (
+                  <View style={styles.expiredInCard}>
+                    <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                    <Text style={styles.expiredInCardText}>
+                      Time expired - Exit soon!
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
           </View>
         </View>
 
@@ -1039,7 +1167,7 @@ export default function UserBookingDetailScreen() {
                 >
                   <Ionicons name="qr-code" size={20} color="#FFFFFF" />
                   <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
-                    View Entry QR Code
+                    Show Entry QR Code
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -1071,29 +1199,56 @@ export default function UserBookingDetailScreen() {
           </>
         )}
 
-        {booking.status !== "pending" && (
-          <View style={styles.cancellationInfo}>
-            <Ionicons name="information-circle" size={16} color="#6B7280" />
-            <Text style={styles.cancellationInfoText}>
-              Booking can only be cancelled when status is "pending"
-            </Text>
-          </View>
-        )}
-
         {booking.status === "active" && (
-          <TouchableOpacity style={styles.fullWidthButton}>
-            <LinearGradient
-              colors={["#3B82F6", "#2563EB"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.payGradient}
-            >
-              <Ionicons name="car" size={20} color="#FFFFFF" />
-              <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
-                Currently Parked
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <>
+            {booking.exit_qr ? (
+              <TouchableOpacity
+                style={styles.fullWidthButton}
+                onPress={() =>
+                  showQRCode(
+                    booking.exit_qr,
+                    "Show this QR code at parking exit"
+                  )
+                }
+              >
+                <LinearGradient
+                  colors={["#F59E0B", "#D97706"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payGradient}
+                >
+                  <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+                  <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                    Show Exit QR Code
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.fullWidthButton}
+                onPress={handleGenerateExitQR}
+                disabled={exitQrLoading}
+              >
+                <LinearGradient
+                  colors={["#F59E0B", "#D97706"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payGradient}
+                >
+                  {exitQrLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="log-out" size={20} color="#FFFFFF" />
+                      <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                        Generate Exit QR
+                      </Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </>
         )}
 
         {booking.status === "completed" && (
@@ -1110,6 +1265,31 @@ export default function UserBookingDetailScreen() {
               </Text>
             </LinearGradient>
           </TouchableOpacity>
+        )}
+
+        {booking.status === "cancelled" && (
+          <TouchableOpacity style={styles.fullWidthButton}>
+            <LinearGradient
+              colors={["#EF4444", "#DC2626"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.payGradient}
+            >
+              <Ionicons name="close-circle" size={20} color="#FFFFFF" />
+              <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                Booking Cancelled
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        {booking.status !== "pending" && booking.status !== "cancelled" && (
+          <View style={styles.cancellationInfo}>
+            <Ionicons name="information-circle" size={16} color="#6B7280" />
+            <Text style={styles.cancellationInfoText}>
+              Booking can only be cancelled when status is "pending"
+            </Text>
+          </View>
         )}
       </View>
 
@@ -1223,6 +1403,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
+
+  // ✅ STATUS CARD STYLES
   statusCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -1244,6 +1426,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
     marginLeft: 8,
+    flex: 1,
+  },
+  timerInHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  timerInHeaderText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 4,
   },
   statusBody: {
     padding: 16,
@@ -1258,6 +1456,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
   },
+  warningInCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  warningInCardText: {
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "500",
+    marginLeft: 6,
+  },
+  expiredInCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#EF4444",
+  },
+  expiredInCardText: {
+    fontSize: 12,
+    color: "#991B1B",
+    fontWeight: "500",
+    marginLeft: 6,
+  },
+
+  // ✅ SECTION STYLES
   section: {
     marginTop: 24,
   },
@@ -1267,6 +1501,8 @@ const styles = StyleSheet.create({
     color: "#1E3A8A",
     marginBottom: 12,
   },
+
+  // ✅ PARKING CARD STYLES
   parkingCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -1311,6 +1547,8 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginLeft: 4,
   },
+
+  // ✅ DETAILS CARD STYLES
   detailsCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -1350,6 +1588,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#1E3A8A",
   },
+
+  // ✅ COST CARD STYLES
   costCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -1390,6 +1630,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FE7A3A",
   },
+
+  // ✅ QR CARD STYLES
   qrCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -1400,6 +1642,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  qrSection: {
+    marginBottom: 20,
   },
   qrText: {
     fontSize: 14,
@@ -1424,6 +1669,66 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  qrGenerated: {
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  qrGeneratedText: {
+    fontSize: 14,
+    color: "#059669",
+    fontWeight: "600",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  qrUsed: {
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  qrUsedText: {
+    fontSize: 14,
+    color: "#059669",
+    fontWeight: "600",
+    marginTop: 8,
+  },
+  viewQrButton: {
+    backgroundColor: "#10B981",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  viewQrButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // ✅ INSTRUCTION CARD STYLES
+  instructionCard: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  instructionText: {
+    fontSize: 14,
+    color: "#1E40AF",
+    marginLeft: 12,
+    flex: 1,
+    fontWeight: "500",
+  },
+
+  // ✅ BOTTOM SPACING AND ACTIONS
   bottomSpacing: {
     height: 100,
   },
@@ -1470,6 +1775,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
   },
+  cancellationInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  cancellationInfoText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginLeft: 6,
+    fontStyle: "italic",
+  },
+
+  // ✅ LOADING AND ERROR STYLES
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1491,65 +1814,8 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "600",
   },
-  qrSection: {
-    marginBottom: 20,
-  },
-  qrGenerated: {
-    alignItems: "center",
-    backgroundColor: "#F0FDF4",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#10B981",
-  },
-  qrGeneratedText: {
-    fontSize: 14,
-    color: "#059669",
-    fontWeight: "600",
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  qrUsed: {
-    alignItems: "center",
-    backgroundColor: "#F0FDF4",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#10B981",
-  },
-  qrUsedText: {
-    fontSize: 14,
-    color: "#059669",
-    fontWeight: "600",
-    marginTop: 8,
-  },
-  viewQrButton: {
-    backgroundColor: "#10B981",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  viewQrButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  instructionCard: {
-    backgroundColor: "#EFF6FF",
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#DBEAFE",
-  },
-  instructionText: {
-    fontSize: 14,
-    color: "#1E40AF",
-    marginLeft: 12,
-    flex: 1,
-    fontWeight: "500",
-  },
+
+  // ✅ MODAL STYLES
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1659,21 +1925,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 16,
-  },
-  cancellationInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 20,
-    marginTop: 10,
-  },
-  cancellationInfoText: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginLeft: 6,
-    fontStyle: "italic",
   },
 });

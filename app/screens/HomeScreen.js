@@ -285,12 +285,6 @@ export default function HomeScreen() {
     });
   };
 
-  const handleLogout = async () => {
-    await SecureStore.deleteItemAsync("access_token");
-    await SecureStore.deleteItemAsync("user_role");
-    setIsSignIn(false);
-  };
-
   // Calculate distance between two coordinates
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371; // Earth's radius in kilometers
@@ -518,7 +512,6 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>My Recent Bookings</Text>
             <TouchableOpacity onPress={handleViewAllBookings}>
               <Text style={styles.viewAllText}>View All</Text>
-              <Text onPress={handleLogout}> Logout</Text>
             </TouchableOpacity>
           </View>
 

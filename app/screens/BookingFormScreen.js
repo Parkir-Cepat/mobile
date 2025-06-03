@@ -102,7 +102,7 @@ export default function BookingFormScreen() {
           {
             text: "Pay Now",
             onPress: () =>
-              navigation.navigate("BookingDetailScreen", {
+              navigation.navigate("UserBookingDetailScreen", {
                 bookingId: data.createBooking.booking._id,
               }),
           },

@@ -11,6 +11,7 @@ import {
   Animated,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -72,19 +73,79 @@ export default function UserParkingDetailScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
 
+  // ✅ ADD: Loading animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.3)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current; // ✅ ADD: Spin animation for loading
+
   const { data, loading, error } = useQuery(GET_PARKING, {
     variables: { getParkingId: parkingId },
     errorPolicy: "all",
     fetchPolicy: "cache-and-network",
     onError: (error) => {
       console.log("GraphQL Error:", error);
-      console.log("GraphQL Error Network:", error.networkError);
-      console.log("GraphQL Error GraphQL:", error.graphQLErrors);
-      console.log("Variables sent:", { getParkingId: parkingId });
     },
     onCompleted: (data) => {
       console.log("Data received:", data);
+      // ✅ ADD: Animate content when data loads
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+      ]).start();
     },
+  });
+
+  // ✅ ADD: Start spin animation on mount
+  React.useEffect(() => {
+    if (loading) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+      // ✅ ADD: Continuous spin animation
+      const spin = Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      );
+
+      pulse.start();
+      spin.start();
+
+      return () => {
+        pulse.stop();
+        spin.stop();
+      };
+    }
+  }, [loading, pulseAnim, spinAnim]);
+
+  // ✅ ADD: Interpolate spin value
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
   });
 
   const parking = data?.getParking;
@@ -122,31 +183,185 @@ export default function UserParkingDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+        <LinearGradient
+          colors={["#FE7A3A", "#FF9A62"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.loadingHeader}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.loadingHeaderContent}>
+            {/* ✅ ADD: Spinning loading icon in header */}
+            <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+              <Ionicons name="refresh" size={20} color="#FFFFFF" />
+            </Animated.View>
+            <Text style={styles.loadingHeaderTitle}>Loading...</Text>
+          </View>
+        </LinearGradient>
+
         <View style={styles.loadingContainer}>
-          <Text>Loading parking details...</Text>
-          <Text>Parking ID: {parkingId}</Text>
+          {/* ✅ ENHANCED: Main spinning loader */}
+          <View style={styles.mainLoadingContainer}>
+            <Animated.View
+              style={[
+                styles.mainSpinner,
+                {
+                  transform: [
+                    { rotate: spinInterpolate },
+                    { scale: pulseAnim },
+                  ],
+                },
+              ]}
+            >
+              <Ionicons name="car-sport" size={60} color="#FE7A3A" />
+            </Animated.View>
+
+            {/* ✅ ADD: Secondary spinning rings */}
+            <Animated.View
+              style={[
+                styles.spinnerRing,
+                styles.outerRing,
+                { transform: [{ rotate: spinInterpolate }] },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.spinnerRing,
+                styles.innerRing,
+                {
+                  transform: [
+                    {
+                      rotate: spinAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ["360deg", "0deg"], // Reverse direction
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            />
+          </View>
+
+          {/* ✅ ENHANCED: Animated loading skeleton */}
+          <View style={styles.loadingContent}>
+            <Animated.View
+              style={[
+                styles.loadingImageSkeleton,
+                { transform: [{ scale: pulseAnim }] },
+              ]}
+            >
+              <Animated.View
+                style={{ transform: [{ rotate: spinInterpolate }] }}
+              >
+                <Ionicons name="image-outline" size={40} color="#9CA3AF" />
+              </Animated.View>
+            </Animated.View>
+
+            <View style={styles.loadingTextContainer}>
+              <Animated.View
+                style={[
+                  styles.loadingTextSkeleton,
+                  styles.loadingTitle,
+                  { opacity: pulseAnim },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.loadingTextSkeleton,
+                  styles.loadingSubtitle,
+                  { opacity: pulseAnim },
+                ]}
+              />
+
+              <View style={styles.loadingDetails}>
+                <Animated.View
+                  style={[styles.loadingDetailSkeleton, { opacity: pulseAnim }]}
+                />
+                <Animated.View
+                  style={[styles.loadingDetailSkeleton, { opacity: pulseAnim }]}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* ✅ ADD: Loading dots animation */}
+          <View style={styles.loadingDotsContainer}>
+            <Animated.View
+              style={[styles.loadingDot, { opacity: pulseAnim }]}
+            />
+            <Animated.View
+              style={[
+                styles.loadingDot,
+                {
+                  opacity: spinAnim.interpolate({
+                    inputRange: [0, 0.33, 0.66, 1],
+                    outputRange: [0.3, 1, 0.3, 0.3],
+                  }),
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.loadingDot,
+                {
+                  opacity: spinAnim.interpolate({
+                    inputRange: [0, 0.33, 0.66, 1],
+                    outputRange: [0.3, 0.3, 1, 0.3],
+                  }),
+                },
+              ]}
+            />
+          </View>
         </View>
       </SafeAreaView>
     );
   }
 
+  // ✅ ENHANCED: Better error screen
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
+        <LinearGradient
+          colors={["#EF4444", "#DC2626"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.errorHeader}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.errorHeaderTitle}>Error Loading</Text>
+        </LinearGradient>
+
         <View style={styles.errorContainer}>
-          <Text>Error loading parking details</Text>
-          <Text>Status: {error.networkError?.statusCode || "Unknown"}</Text>
-          <Text>Message: {error.message}</Text>
-          <Text>Parking ID: {parkingId}</Text>
-          <Text>Query used: getParking</Text>
-          {error.graphQLErrors && error.graphQLErrors.length > 0 && (
-            <Text>GraphQL Errors: {JSON.stringify(error.graphQLErrors)}</Text>
-          )}
+          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
+          <Text style={styles.errorTitle}>Oops! Something went wrong</Text>
+          <Text style={styles.errorMessage}>
+            We couldn't load the parking details. Please check your connection
+            and try again.
+          </Text>
+
           <TouchableOpacity
             style={styles.retryButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.retryButtonText}>Go Back</Text>
+            <LinearGradient
+              colors={["#FF9A62", "#FE7A3A"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.retryGradient}
+            >
+              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+              <Text style={styles.retryButtonText}>Go Back</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -500,7 +715,19 @@ export default function UserParkingDetailScreen() {
     );
   };
 
-  return renderParkingDetail(parking);
+  return (
+    <Animated.View
+      style={[
+        styles.container,
+        {
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }],
+        },
+      ]}
+    >
+      {renderParkingDetail(parking)}
+    </Animated.View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -508,15 +735,182 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
+  loadingHeader: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  loadingHeaderContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 16,
+  },
+  loadingHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 12,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 40,
+  },
+
+  // ✅ ADD: Main spinner styles
+  mainLoadingContainer: {
+    position: "relative",
+    marginBottom: 60,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  mainSpinner: {
+    zIndex: 3,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  spinnerRing: {
+    position: "absolute",
+    borderWidth: 3,
+    borderRadius: 999,
+    borderTopColor: "#FE7A3A",
+    borderRightColor: "transparent",
+    borderBottomColor: "transparent",
+    borderLeftColor: "transparent",
+  },
+  outerRing: {
+    width: 120,
+    height: 120,
+    borderWidth: 4,
+  },
+  innerRing: {
+    width: 80,
+    height: 80,
+    borderWidth: 2,
+    borderTopColor: "#FF9A62",
+  },
+
+  loadingContent: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  loadingImageSkeleton: {
+    width: width - 80,
+    height: 120,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  // ✅ ADD: Loading dots styles
+  loadingDotsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  loadingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FE7A3A",
+    marginHorizontal: 4,
+  },
+
+  loadingTextContainer: {
+    width: "100%",
+    paddingHorizontal: 20,
+  },
+  loadingTextSkeleton: {
+    backgroundColor: "#E5E7EB",
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  loadingTitle: {
+    height: 24,
+    width: "70%",
+  },
+  loadingSubtitle: {
+    height: 16,
+    width: "50%",
+  },
+  loadingDetails: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  loadingDetailSkeleton: {
+    height: 40,
+    width: "45%",
+    backgroundColor: "#E5E7EB",
+    borderRadius: 12,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1E3A8A",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  loadingSubText: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  errorHeader: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  errorHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#1E3A8A",
+    marginTop: 24,
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  retryButton: {
+    borderRadius: 25,
+    overflow: "hidden",
+  },
+  retryGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 16,
+    marginLeft: 8,
   },
   statusBanner: {
     flexDirection: "row",

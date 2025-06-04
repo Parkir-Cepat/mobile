@@ -17,6 +17,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
+import * as Device from "expo-device";
 import { gql, useQuery } from "@apollo/client";
 import * as SecureStore from "expo-secure-store";
 import { LinearGradient } from "expo-linear-gradient";
@@ -77,47 +78,13 @@ const GET_NEARBY_PARKINGS = gql`
   }
 `;
 
-// Dummy data untuk active bookings
-const DUMMY_ACTIVE_BOOKINGS = [
-  {
-    id: "booking1",
-    parkingName: "Grand Mall Parking",
-    entryTime: "2023-11-15T10:30:00",
-    vehicleNo: "B 1234 CD",
-    status: "active",
-  },
-];
-
-// Test locations untuk simulator
-const TEST_LOCATIONS = {
-  pematangsiantar: {
-    latitude: 3.007083,
-    longitude: 99.077,
-    name: "Pematang Siantar",
-  },
-  medan: {
-    latitude: 3.0037934916848705,
-    longitude: 99.08367466181517,
-    name: "Medan",
-  },
-  jakarta: {
-    latitude: -6.2088,
-    longitude: 106.8456,
-    name: "Jakarta",
-  },
-  bandung: {
-    latitude: -6.9175,
-    longitude: 107.6191,
-    name: "Bandung",
-  },
-};
-
 export default function HomeScreen() {
   const navigation = useNavigation();
   const [location, setLocation] = useState(null);
+  const [locationAddress, setLocationAddress] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeBookings, setActiveBookings] = useState(DUMMY_ACTIVE_BOOKINGS);
   const { setIsSignIn } = useAuth();
   const [userData, setUserData] = useState(null);
 
@@ -141,71 +108,117 @@ export default function HomeScreen() {
     fetchPolicy: "cache-and-network", // Always fetch from network
   });
 
+  // Enhanced real location detection with reverse geocoding
   useEffect(() => {
-    (async () => {
-      // Check if running on iOS simulator
-      const isIOSSimulator = Platform.OS === "ios" && __DEV__;
+    async function getCurrentLocation() {
+      setLocationLoading(true);
 
-      if (isIOSSimulator) {
-        // Use test location for iOS simulator - Update to Pematang Siantar
-        const testLocation = {
-          coords: {
-            latitude: TEST_LOCATIONS.pematangsiantar.latitude,
-            longitude: TEST_LOCATIONS.pematangsiantar.longitude,
-            accuracy: 5,
-            altitude: 0,
-            altitudeAccuracy: -1,
-            heading: -1,
-            speed: -1,
-          },
-          timestamp: Date.now(),
-        };
-
-        setLocation(testLocation);
-        console.log(
-          `Using test location (${TEST_LOCATIONS.pematangsiantar.name}) for iOS simulator:`,
-          testLocation
+      // Check for Android emulator (from test.js)
+      if (Platform.OS === "android" && !Device.isDevice) {
+        setErrorMsg(
+          "Location services not available in Android Emulator. Please use a physical device."
         );
-        console.log(
-          "Location coordinates:",
-          testLocation.coords.latitude,
-          testLocation.coords.longitude
-        );
-        return;
-      }
-
-      // Regular location detection for physical devices
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setErrorMsg("Permission to access location was denied");
+        setLocationLoading(false);
         return;
       }
 
       try {
+        // Request permission
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setErrorMsg("Permission to access location was denied");
+          setLocationLoading(false);
+          return;
+        }
+
+        console.log("Getting current location...");
+
+        // Get current position with enhanced options
         let currentLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
           timeout: 15000,
           maximumAge: 10000,
         });
-        setLocation(currentLocation);
-        console.log("Current location:", currentLocation);
-      } catch (error) {
-        setErrorMsg("Error getting location");
-        console.error("Location error:", error);
 
-        // Fallback to last known location
+        console.log("Current location received:", currentLocation);
+        setLocation(currentLocation);
+
+        // Get address from coordinates
         try {
-          let lastKnownLocation = await Location.getLastKnownPositionAsync();
+          const addressResponse = await Location.reverseGeocodeAsync({
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+          });
+
+          if (addressResponse && addressResponse.length > 0) {
+            const address = addressResponse[0];
+            const cityName =
+              address.city || address.subregion || address.region;
+            const district = address.district || address.street;
+
+            // Create readable address
+            let readableAddress = "";
+            if (district && cityName) {
+              readableAddress = `${district}, ${cityName}`;
+            } else if (cityName) {
+              readableAddress = cityName;
+            } else {
+              readableAddress = `${address.region || "Unknown location"}`;
+            }
+
+            setLocationAddress(readableAddress);
+            console.log("Address found:", readableAddress);
+          } else {
+            setLocationAddress("Location found");
+          }
+        } catch (addressError) {
+          console.error("Reverse geocoding error:", addressError);
+          setLocationAddress("Location found");
+        }
+
+        setErrorMsg(null);
+      } catch (error) {
+        console.error("Location error:", error);
+        setErrorMsg(
+          "Failed to get your location. Please enable location services."
+        );
+
+        // Try fallback to last known location
+        try {
+          console.log("Trying last known location...");
+          let lastKnownLocation = await Location.getLastKnownPositionAsync({
+            maxAge: 60000, // 1 minute
+            requiredAccuracy: 100,
+          });
+
           if (lastKnownLocation) {
-            setLocation(lastKnownLocation);
             console.log("Using last known location:", lastKnownLocation);
+            setLocation(lastKnownLocation);
+            setLocationAddress("Last known location");
+            setErrorMsg("Using last known location");
           }
         } catch (fallbackError) {
           console.error("Fallback location error:", fallbackError);
         }
+      } finally {
+        setLocationLoading(false);
       }
-    })();
+    }
+
+    getCurrentLocation();
   }, []);
+
+  // Enhanced location status logging
+  useEffect(() => {
+    if (location) {
+      console.log("📍 Location coordinates:", {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        accuracy: location.coords.accuracy,
+        timestamp: new Date(location.timestamp).toLocaleString(),
+      });
+    }
+  }, [location]);
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -221,11 +234,107 @@ export default function HomeScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
+      // Refresh location along with other data
+      if (!location) {
+        setLocationLoading(true);
+        try {
+          let currentLocation = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            timeout: 10000,
+          });
+          setLocation(currentLocation);
+
+          // Get fresh address
+          try {
+            const addressResponse = await Location.reverseGeocodeAsync({
+              latitude: currentLocation.coords.latitude,
+              longitude: currentLocation.coords.longitude,
+            });
+
+            if (addressResponse && addressResponse.length > 0) {
+              const address = addressResponse[0];
+              const cityName =
+                address.city || address.subregion || address.region;
+              const district = address.district || address.street;
+
+              let readableAddress = "";
+              if (district && cityName) {
+                readableAddress = `${district}, ${cityName}`;
+              } else if (cityName) {
+                readableAddress = cityName;
+              } else {
+                readableAddress = `${address.region || "Unknown location"}`;
+              }
+
+              setLocationAddress(readableAddress);
+            }
+          } catch (addressError) {
+            console.error("Refresh address error:", addressError);
+            setLocationAddress("Location found");
+          }
+
+          setErrorMsg(null);
+        } catch (error) {
+          console.error("Refresh location error:", error);
+        } finally {
+          setLocationLoading(false);
+        }
+      }
+
       await Promise.all([refetch(), refetchNearby()]);
     } catch (error) {
       console.error("Refresh error:", error);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const retryLocation = async () => {
+    setLocationLoading(true);
+    setErrorMsg(null);
+    setLocationAddress(null);
+
+    try {
+      let currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeout: 15000,
+      });
+      setLocation(currentLocation);
+
+      // Get address for retry
+      try {
+        const addressResponse = await Location.reverseGeocodeAsync({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+        });
+
+        if (addressResponse && addressResponse.length > 0) {
+          const address = addressResponse[0];
+          const cityName = address.city || address.subregion || address.region;
+          const district = address.district || address.street;
+
+          let readableAddress = "";
+          if (district && cityName) {
+            readableAddress = `${district}, ${cityName}`;
+          } else if (cityName) {
+            readableAddress = cityName;
+          } else {
+            readableAddress = `${address.region || "Unknown location"}`;
+          }
+
+          setLocationAddress(readableAddress);
+        }
+      } catch (addressError) {
+        console.error("Retry address error:", addressError);
+        setLocationAddress("Location found");
+      }
+
+      console.log("Location retry successful:", currentLocation);
+    } catch (error) {
+      console.error("Location retry failed:", error);
+      setErrorMsg("Failed to get location. Please check your settings.");
+    } finally {
+      setLocationLoading(false);
     }
   };
 
@@ -505,39 +614,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick Booking Section */}
-        <View style={styles.quickBookingSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>My Recent Bookings</Text>
-            <TouchableOpacity onPress={handleViewAllBookings}>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Dummy content for recent bookings - to be replaced with real data */}
-
-          <View
-            style={{ padding: 24, alignItems: "center", paddingBottom: 80 }}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={48}
-              color="#9CA3AF"
-              style={{ marginBottom: 12 }}
-            />
-            <Text
-              style={{
-                color: "#6B7280",
-                fontSize: 18,
-                fontWeight: "600",
-                marginBottom: 4,
-              }}
-            >
-              No Active Bookings Yet
-            </Text>
-          </View>
-        </View>
-
         {/* Nearby Parking Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
@@ -547,17 +623,37 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Location Status */}
-          {!location && (
+          {/* Enhanced Location Status */}
+          {locationLoading && (
             <View style={styles.locationContainer}>
               <ActivityIndicator size="small" color="#FE7A3A" />
               <Text style={styles.locationText}>Getting your location...</Text>
             </View>
           )}
 
-          {errorMsg && (
+          {errorMsg && !location && (
             <View style={styles.errorContainer}>
+              <Ionicons name="location-outline" size={40} color="#EF4444" />
               <Text style={styles.errorText}>{errorMsg}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={retryLocation}
+              >
+                <Text style={styles.retryButtonText}>Retry Location</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Show location info when available */}
+          {location && (
+            <View style={styles.locationInfoContainer}>
+              <Ionicons name="location" size={16} color="#10B981" />
+              <Text style={styles.locationInfoText}>
+                {locationAddress || "Location found"}
+                {errorMsg && (
+                  <Text style={styles.lastKnownText}> (Last known)</Text>
+                )}
+              </Text>
             </View>
           )}
 
@@ -568,7 +664,7 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {nearbyError && !nearbyLoading && (
+          {nearbyError && !nearbyLoading && location && (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
               <Text style={styles.errorText}>
@@ -578,7 +674,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.retryButton}
                 onPress={() => {
-                  console.log("Retry button pressed");
+                  console.log("Retry nearby parking button pressed");
                   refetchNearby();
                 }}
               >
@@ -597,10 +693,9 @@ export default function HomeScreen() {
                 <Text style={styles.emptySubtitle}>
                   No parking spaces available within 50km of your location
                 </Text>
-                <Text style={styles.debugText}>
-                  Search coords: {location.coords.latitude.toFixed(4)},{" "}
-                  {location.coords.longitude.toFixed(4)}
-                </Text>
+                {locationAddress && (
+                  <Text style={styles.debugText}>Near: {locationAddress}</Text>
+                )}
               </View>
             )}
 
@@ -735,8 +830,8 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   sectionContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 15,
+    paddingHorizontal: 30,
+    paddingTop: 40,
     paddingBottom: 5,
     marginBottom: 10,
   },
@@ -1007,5 +1102,25 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     marginTop: 5,
     textAlign: "center",
+  },
+  locationInfoContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  locationInfoText: {
+    marginLeft: 6,
+    fontSize: 12,
+    color: "#059669",
+    fontWeight: "500",
+  },
+  lastKnownText: {
+    color: "#F59E0B",
+    fontStyle: "italic",
   },
 });

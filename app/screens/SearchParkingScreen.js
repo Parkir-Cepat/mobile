@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import * as Location from "expo-location";
+import * as Device from "expo-device";
 import { gql, useQuery } from "@apollo/client";
 import { LinearGradient } from "expo-linear-gradient";
 import MapViewDirections from "react-native-maps-directions";
@@ -73,26 +74,15 @@ const GET_NEARBY_PARKINGS = gql`
 
 const { width, height } = Dimensions.get("window");
 
-// Test locations untuk simulator
-const TEST_LOCATIONS = {
-  medan: {
-    latitude: 3.0037934916848705,
-    longitude: 99.08367466181517,
-    name: "Medan",
-  },
-  pematangsiantar: {
-    latitude: 3.007083,
-    longitude: 99.077,
-    name: "Pematang Siantar",
-  },
-};
-
 export default function SearchParkingScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { initialLocation } = route.params || {};
 
   const [location, setLocation] = useState(initialLocation);
+  const [locationAddress, setLocationAddress] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(!initialLocation);
+  const [locationError, setLocationError] = useState(null);
   const [selectedParking, setSelectedParking] = useState(null);
   const [showListView, setShowListView] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
@@ -116,55 +106,160 @@ export default function SearchParkingScreen() {
     fetchPolicy: "cache-and-network",
   });
 
+  // Enhanced location detection with reverse geocoding (from HomeScreen.js)
   useEffect(() => {
     if (!location) {
-      (async () => {
-        const isIOSSimulator = Platform.OS === "ios" && __DEV__;
-
-        if (isIOSSimulator) {
-          const testLocation = {
-            latitude: TEST_LOCATIONS.medan.latitude,
-            longitude: TEST_LOCATIONS.medan.longitude,
-          };
-          setLocation(testLocation);
-          return;
-        }
-
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert(
-            "Permission denied",
-            "Location access is required to find nearby parking"
-          );
-          return;
-        }
-
-        try {
-          const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            timeout: 15000,
-            maximumAge: 10000,
-          });
-          setLocation({
-            latitude: currentLocation.coords.latitude,
-            longitude: currentLocation.coords.longitude,
-          });
-        } catch (error) {
-          try {
-            let lastKnownLocation = await Location.getLastKnownPositionAsync();
-            if (lastKnownLocation) {
-              setLocation({
-                latitude: lastKnownLocation.coords.latitude,
-                longitude: lastKnownLocation.coords.longitude,
-              });
-            }
-          } catch (fallbackError) {
-            Alert.alert("Error", "Failed to get your location");
-          }
-        }
-      })();
+      getCurrentLocation();
+    } else if (location && !locationAddress) {
+      // If we have location but no address, get the address
+      getAddressFromCoordinates(location.latitude, location.longitude);
     }
   }, []);
+
+  const getCurrentLocation = async () => {
+    setLocationLoading(true);
+    setLocationError(null);
+
+    // Check for Android emulator
+    if (Platform.OS === "android" && !Device.isDevice) {
+      setLocationError(
+        "Location services not available in Android Emulator. Please use a physical device."
+      );
+      setLocationLoading(false);
+      return;
+    }
+
+    try {
+      // Request permission
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setLocationError("Permission to access location was denied");
+        setLocationLoading(false);
+        return;
+      }
+
+      console.log("Getting current location...");
+
+      // Get current position with enhanced options
+      let currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeout: 15000,
+        maximumAge: 10000,
+      });
+
+      console.log("Current location received:", currentLocation);
+
+      const locationData = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      };
+
+      setLocation(locationData);
+
+      // Get address from coordinates
+      await getAddressFromCoordinates(
+        locationData.latitude,
+        locationData.longitude
+      );
+
+      setLocationError(null);
+    } catch (error) {
+      console.error("Location error:", error);
+      setLocationError(
+        "Failed to get your location. Please enable location services."
+      );
+
+      // Try fallback to last known location
+      try {
+        console.log("Trying last known location...");
+        let lastKnownLocation = await Location.getLastKnownPositionAsync({
+          maxAge: 60000, // 1 minute
+          requiredAccuracy: 100,
+        });
+
+        if (lastKnownLocation) {
+          console.log("Using last known location:", lastKnownLocation);
+          const fallbackLocation = {
+            latitude: lastKnownLocation.coords.latitude,
+            longitude: lastKnownLocation.coords.longitude,
+          };
+          setLocation(fallbackLocation);
+          setLocationAddress("Last known location");
+          setLocationError("Using last known location");
+        }
+      } catch (fallbackError) {
+        console.error("Fallback location error:", fallbackError);
+      }
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const getAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+      const addressResponse = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude,
+      });
+
+      if (addressResponse && addressResponse.length > 0) {
+        const address = addressResponse[0];
+        const cityName = address.city || address.subregion || address.region;
+        const district = address.district || address.street;
+
+        // Create readable address
+        let readableAddress = "";
+        if (district && cityName) {
+          readableAddress = `${district}, ${cityName}`;
+        } else if (cityName) {
+          readableAddress = cityName;
+        } else {
+          readableAddress = `${address.region || "Unknown location"}`;
+        }
+
+        setLocationAddress(readableAddress);
+        console.log("Address found:", readableAddress);
+      } else {
+        setLocationAddress("Location found");
+      }
+    } catch (addressError) {
+      console.error("Reverse geocoding error:", addressError);
+      setLocationAddress("Location found");
+    }
+  };
+
+  const retryLocation = async () => {
+    setLocationLoading(true);
+    setLocationError(null);
+    setLocationAddress(null);
+
+    try {
+      let currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeout: 15000,
+      });
+
+      const locationData = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      };
+
+      setLocation(locationData);
+
+      // Get address for retry
+      await getAddressFromCoordinates(
+        locationData.latitude,
+        locationData.longitude
+      );
+
+      console.log("Location retry successful:", currentLocation);
+    } catch (error) {
+      console.error("Location retry failed:", error);
+      setLocationError("Failed to get location. Please check your settings.");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
 
   // Calculate distance between two coordinates
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -270,6 +365,16 @@ export default function SearchParkingScreen() {
         </View>
 
         <View style={styles.filterContent}>
+          {/* Current Location Display */}
+          {location && (
+            <View style={styles.currentLocationContainer}>
+              <Ionicons name="location" size={16} color="#10B981" />
+              <Text style={styles.currentLocationText}>
+                📍 {locationAddress || "Current location"}
+              </Text>
+            </View>
+          )}
+
           <Text style={styles.filterLabel}>
             Maximum Distance: {formatFilterDistance(maxDistance)}
           </Text>
@@ -532,7 +637,7 @@ export default function SearchParkingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Header with location info */}
       <LinearGradient
         colors={["#FE7A3A", "#FF9A62"]}
         start={{ x: 0, y: 0 }}
@@ -546,7 +651,10 @@ export default function SearchParkingScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Find Parking</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Find Parking</Text>
+            
+          </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.filterButton}
@@ -571,6 +679,29 @@ export default function SearchParkingScreen() {
         </View>
       </LinearGradient>
 
+      {/* Location Loading/Error States */}
+      {locationLoading && (
+        <View style={styles.locationStatusContainer}>
+          <ActivityIndicator size="small" color="#FE7A3A" />
+          <Text style={styles.locationStatusText}>
+            Getting your location...
+          </Text>
+        </View>
+      )}
+
+      {locationError && !location && (
+        <View style={styles.locationErrorContainer}>
+          <Ionicons name="location-outline" size={20} color="#EF4444" />
+          <Text style={styles.locationErrorText}>{locationError}</Text>
+          <TouchableOpacity
+            style={styles.retryLocationButton}
+            onPress={retryLocation}
+          >
+            <Text style={styles.retryLocationText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {showListView ? (
         // List View
         <View style={styles.listContainer}>
@@ -580,9 +711,26 @@ export default function SearchParkingScreen() {
                 ? "Searching..."
                 : `${nearbyParkings.length} Parking Spots Found`}
             </Text>
+            {location && locationAddress && (
+              <Text style={styles.listSubtitle}>Near {locationAddress}</Text>
+            )}
           </View>
 
-          {nearbyLoading ? (
+          {!location ? (
+            <View style={styles.noLocationContainer}>
+              <Ionicons name="location-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.noLocationText}>Location Required</Text>
+              <Text style={styles.noLocationSubtext}>
+                Please enable location services to find nearby parking
+              </Text>
+              <TouchableOpacity
+                style={styles.enableLocationButton}
+                onPress={retryLocation}
+              >
+                <Text style={styles.enableLocationText}>Enable Location</Text>
+              </TouchableOpacity>
+            </View>
+          ) : nearbyLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#FE7A3A" />
               <Text style={styles.loadingText}>Finding nearby parking...</Text>
@@ -611,7 +759,26 @@ export default function SearchParkingScreen() {
       ) : (
         // Map View
         <View style={styles.mapContainer}>
-          {location ? (
+          {!location ? (
+            <View style={styles.noLocationMapContainer}>
+              <Ionicons name="location-outline" size={60} color="#D1D5DB" />
+              <Text style={styles.noLocationMapText}>Location Required</Text>
+              <Text style={styles.noLocationMapSubtext}>
+                Please enable location services to view the map
+              </Text>
+              <TouchableOpacity
+                style={styles.enableLocationButton}
+                onPress={retryLocation}
+                disabled={locationLoading}
+              >
+                {locationLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.enableLocationText}>Enable Location</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
             <MapView
               provider={PROVIDER_GOOGLE}
               style={styles.map}
@@ -637,7 +804,7 @@ export default function SearchParkingScreen() {
                   longitude: location.longitude,
                 }}
                 title="Your location"
-                description="Current location"
+                description={locationAddress || "Current location"}
               >
                 <View style={styles.userMarker}>
                   <View style={styles.userDot} />
@@ -701,16 +868,17 @@ export default function SearchParkingScreen() {
                 />
               )}
             </MapView>
-          ) : (
-            <View style={[styles.map, styles.loadingContainer]}>
-              <ActivityIndicator size="large" color="#FE7A3A" />
-              <Text style={styles.loadingText}>Getting your location...</Text>
-            </View>
           )}
 
           {/* Bottom Parking Boxes */}
           <View style={styles.bottomContainer}>
-            {nearbyLoading ? (
+            {!location ? (
+              <View style={styles.noLocationBottomContainer}>
+                <Text style={styles.noLocationBottomText}>
+                  Enable location to find parking spots
+                </Text>
+              </View>
+            ) : nearbyLoading ? (
               <View style={styles.boxLoadingContainer}>
                 <ActivityIndicator size="large" color="#FE7A3A" />
                 <Text style={styles.loadingText}>Finding parking spots...</Text>
@@ -734,7 +902,8 @@ export default function SearchParkingScreen() {
                   </Text>
                   <Text style={styles.rangeSubtext}>
                     {nearbyParkings.length} spot
-                    {nearbyParkings.length !== 1 ? "s" : ""} found
+                    {nearbyParkings.length !== 1 ? "s" : ""} found near{" "}
+                    {locationAddress || "your location"}
                   </Text>
                 </View>
               </>
@@ -801,6 +970,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.9)",
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: "row",
@@ -901,6 +1079,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#1E3A8A",
+  },
+  listSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginTop: 4,
   },
   listContent: {
     padding: 15,
@@ -1359,5 +1542,122 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#9CA3AF",
     marginTop: 2,
+  },
+  locationStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    backgroundColor: "#FFF5F0",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FED7AA",
+  },
+  locationStatusText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: "#EA580C",
+    fontWeight: "500",
+  },
+  locationErrorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#FEF2F2",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FECACA",
+  },
+  locationErrorText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 12,
+    color: "#DC2626",
+  },
+  retryLocationButton: {
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  retryLocationText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  currentLocationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  currentLocationText: {
+    marginLeft: 6,
+    fontSize: 12,
+    color: "#059669",
+    fontWeight: "500",
+  },
+  noLocationContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  noLocationText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noLocationSubtext: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  enableLocationButton: {
+    backgroundColor: "#FE7A3A",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  enableLocationText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  noLocationMapContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    padding: 40,
+  },
+  noLocationMapText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noLocationMapSubtext: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  noLocationBottomContainer: {
+    alignItems: "center",
+    paddingVertical: 30,
+  },
+  noLocationBottomText: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
   },
 });

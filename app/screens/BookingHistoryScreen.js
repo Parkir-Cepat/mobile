@@ -254,7 +254,7 @@ export default function BookingHistoryScreen() {
 
   const renderHeader = () => (
     <View style={styles.statsSection}>
-      <Text style={styles.statsTitle}>Ringkasan</Text>
+      <Text style={styles.statsTitle}>Summary</Text>
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <View style={styles.statIcon}>
@@ -321,7 +321,7 @@ export default function BookingHistoryScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="#1e293b" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Riwayat Booking</Text>
+          <Text style={styles.headerTitle}>Boking History</Text>
           <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
             <Ionicons name="refresh" size={20} color="#64748b" />
           </TouchableOpacity>

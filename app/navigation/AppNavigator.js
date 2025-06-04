@@ -23,6 +23,7 @@ import MyBookingsScreen from "../screens/MyBookingsScreen";
 import UserBookingDetailScreen from "../screens/UserBookingDetailScreen";
 import UserProfile from "../screens/UserProfile";
 import BookingHistoryScreen from "../screens/BookingHistoryScreen";
+import AppTest from "../test";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -75,7 +76,7 @@ const HomeNavigator = () => {
         name="UserBookingDetailScreen"
         component={UserBookingDetailScreen}
         options={{ headerShown: false }}
-      />      
+      />
       <Stack.Screen
         name="MyBookingsScreen"
         component={MyBookingsScreen}
@@ -83,7 +84,7 @@ const HomeNavigator = () => {
       />
       <Stack.Screen
         name="ChatScreen"
-        component={ChatScreen} 
+        component={ChatScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
@@ -202,17 +203,17 @@ function AppNavigator() {
       const token = await SecureStore.getItemAsync("access_token");
       const savedRole = await SecureStore.getItemAsync("user_role");
       const savedUserData = await SecureStore.getItemAsync("user_data");
-      
+
       if (token && savedRole) {
         setRole(savedRole);
         setIsSignIn(true);
-        
+
         if (savedUserData) {
           try {
             const userData = JSON.parse(savedUserData);
             setUser(userData);
           } catch (error) {
-            console.error('Error parsing user data:', error);
+            console.error("Error parsing user data:", error);
           }
         }
       } else {

@@ -103,6 +103,7 @@ const ChatScreen = ({ navigation, onClose }) => {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState("chats");
   const [searchQuery, setSearchQuery] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
 
   // Enhanced GraphQL operations with better error handling
   const [createPrivateRoom] = useMutation(CREATE_PRIVATE_ROOM, {
@@ -120,7 +121,10 @@ const ChatScreen = ({ navigation, onClose }) => {
     data: landownersData,
     loading: landownersLoading,
     error: landownersError,
-  } = useQuery(GET_ALL_LANDOWNERS);
+  } = useQuery(GET_ALL_LANDOWNERS, {
+    errorPolicy: "all",
+    fetchPolicy: "cache-and-network",
+  });
 
   // Get user's existing chats
   const {
@@ -128,19 +132,76 @@ const ChatScreen = ({ navigation, onClose }) => {
     loading: chatsLoading,
     error: chatsError,
     refetch: refetchChats,
-  } = useQuery(GET_USER_CHATS);
+  } = useQuery(GET_USER_CHATS, {
+    fetchPolicy: "cache-and-network",
+    errorPolicy: "all",
+    notifyOnNetworkStatusChange: true,
+  });
 
-  // Subscribe to room updates
-  useSubscription(ROOM_UPDATED, {
-    variables: { userId: user?._id },
+  // Enhanced subscription with better error handling
+  const {
+    data: subscriptionData,
+    error: subscriptionError,
+    loading: subscriptionLoading,
+  } = useSubscription(ROOM_UPDATED, {
+    variables: { user_id: user?._id },
     skip: !user?._id,
+    shouldResubscribe: true,
+    fetchPolicy: "no-cache",
     onData: ({ data }) => {
-      if (data?.data?.roomUpdated) {
-        // Fetch fresh data when room is updated
-        refetchChats();
+      console.log("Room update received:", data);
+      try {
+        if (data?.data?.roomUpdated) {
+          console.log("Processing room update:", data.data.roomUpdated);
+          // Refetch chats when room is updated
+          refetchChats();
+          setConnectionStatus("connected");
+        }
+      } catch (error) {
+        console.error("Error processing room update:", error);
       }
     },
+    onError: (error) => {
+      console.error("ROOM_UPDATED subscription error:", error);
+      setConnectionStatus("error");
+
+      // Don't show alerts for subscription errors to avoid spam
+      // Just log them for debugging
+      if (error.message?.includes("400")) {
+        console.error(
+          "Subscription returned 400 - possibly unsupported or malformed"
+        );
+      }
+    },
+    onCompleted: () => {
+      console.log("ROOM_UPDATED subscription established");
+      setConnectionStatus("connected");
+    },
   });
+
+  // Monitor subscription status
+  useEffect(() => {
+    if (subscriptionError) {
+      console.error("Room subscription error details:", {
+        message: subscriptionError.message,
+        graphQLErrors: subscriptionError.graphQLErrors,
+        networkError: subscriptionError.networkError,
+      });
+
+      // Set appropriate connection status
+      if (subscriptionError.message?.includes("400")) {
+        setConnectionStatus("unsupported");
+      } else if (subscriptionError.networkError) {
+        setConnectionStatus("network_error");
+      } else {
+        setConnectionStatus("error");
+      }
+    } else if (subscriptionLoading) {
+      setConnectionStatus("connecting");
+    } else {
+      setConnectionStatus("connected");
+    }
+  }, [subscriptionError, subscriptionLoading]);
 
   const landowners = landownersData?.getUsersByRole || [];
   const chats = chatsData?.getMyRooms || [];
@@ -203,6 +264,7 @@ const ChatScreen = ({ navigation, onClose }) => {
         return matchesSearch && !hasExistingChat;
       });
 
+  // Enhanced handleContactPress with better error handling
   const handleContactPress = async (landowner) => {
     try {
       // Check if room already exists
@@ -221,23 +283,46 @@ const ChatScreen = ({ navigation, onClose }) => {
         return;
       }
 
+      console.log("Creating new room with landowner:", landowner._id);
+
       const response = await createPrivateRoom({
         variables: {
           input: {
             participant_id: landowner._id,
           },
         },
+        errorPolicy: "all",
       });
+
+      console.log("Create room response:", response);
 
       if (response.data?.createPrivateRoom) {
         navigation.navigate("ChatRoomScreen", {
           roomId: response.data.createPrivateRoom._id,
           contactName: landowner.name,
         });
+        // Refresh chats list to show new room
+        await refetchChats();
+      } else if (response.errors) {
+        console.error("GraphQL errors in room creation:", response.errors);
+        Alert.alert(
+          "Error",
+          response.errors[0]?.message || "Failed to create chat room"
+        );
       }
     } catch (error) {
       console.error("Error creating chat room:", error);
-      Alert.alert("Error", "Failed to create chat room");
+
+      let errorMessage = "Failed to create chat room. Please try again.";
+      if (error.networkError?.statusCode === 400) {
+        errorMessage = "Invalid request. Please check your data and try again.";
+      } else if (error.networkError?.statusCode === 401) {
+        errorMessage = "Authentication error. Please log in again.";
+      } else if (error.networkError) {
+        errorMessage = "Network error. Please check your connection.";
+      }
+
+      Alert.alert("Error", errorMessage);
     }
   };
 
@@ -431,6 +516,12 @@ const ChatScreen = ({ navigation, onClose }) => {
       ? item.participants.find((p) => p._id !== user?._id)
       : item;
 
+    // Validate contactInfo
+    if (!contactInfo || !contactInfo._id) {
+      console.warn("Invalid contact info:", contactInfo);
+      return null;
+    }
+
     return (
       <TouchableOpacity
         style={styles.contactItem}
@@ -440,11 +531,13 @@ const ChatScreen = ({ navigation, onClose }) => {
       >
         <View style={styles.contactAvatar}>
           <Text style={styles.avatarText}>
-            {contactInfo?.name?.charAt(0)?.toUpperCase() || ""}
+            {contactInfo?.name?.charAt(0)?.toUpperCase() || "U"}
           </Text>
         </View>
         <View style={styles.contactInfo}>
-          <Text style={styles.contactName}>{contactInfo?.name || ""}</Text>
+          <Text style={styles.contactName}>
+            {contactInfo?.name || "Unknown User"}
+          </Text>
           <Text style={styles.contactRole}>
             {isLandowner ? "User" : "Landowner"}
           </Text>
@@ -460,6 +553,11 @@ const ChatScreen = ({ navigation, onClose }) => {
     const otherParticipant = chat.participants.find((p) => p._id !== user?._id);
     const lastMessage = chat.last_message;
 
+    // Validate chat data
+    if (!otherParticipant) {
+      return null;
+    }
+
     const chatContent = (
       <TouchableOpacity
         style={styles.chatItem}
@@ -467,21 +565,27 @@ const ChatScreen = ({ navigation, onClose }) => {
       >
         <View style={styles.chatAvatar}>
           <Text style={styles.avatarText}>
-            {otherParticipant?.name?.charAt(0)?.toUpperCase() || ""}
+            {otherParticipant?.name?.charAt(0)?.toUpperCase() || "U"}
           </Text>
         </View>
         <View style={styles.chatInfo}>
           <Text style={styles.chatName}>
-            {otherParticipant?.name || chat.name || ""}
+            {otherParticipant?.name || chat.name || "Unknown User"}
           </Text>
           {lastMessage && (
             <Text style={styles.lastMessage} numberOfLines={1}>
-              {lastMessage.message || ""}
+              {lastMessage.message || "No message"}
             </Text>
           )}
           {lastMessage?.created_at && (
             <Text style={styles.messageTime}>
-              {new Date(lastMessage.created_at).toLocaleDateString()}
+              {(() => {
+                try {
+                  return new Date(lastMessage.created_at).toLocaleDateString();
+                } catch (error) {
+                  return "";
+                }
+              })()}
             </Text>
           )}
         </View>
@@ -500,6 +604,59 @@ const ChatScreen = ({ navigation, onClose }) => {
     );
   };
 
+  // Enhanced empty state with connection status
+  const renderEmptyState = (type) => {
+    if (type === "chats-loading") {
+      return (
+        <View style={styles.emptyState}>
+          <ActivityIndicator size="large" color="#FE7A3A" />
+          <Text style={styles.emptyStateText}>Loading chats...</Text>
+        </View>
+      );
+    }
+
+    if (type === "chats-error") {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+          <Text style={styles.emptyStateText}>Error loading chats</Text>
+          <Text style={styles.emptyStateSubtext}>
+            {chatsError?.message || "Please try again"}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => refetchChats()}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (type === "chats-empty") {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="chatbubbles-outline" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyStateText}>
+            {isLandowner ? "No messages yet" : "No chats yet"}
+          </Text>
+          <Text style={styles.emptyStateSubtext}>
+            {isLandowner
+              ? "Users will appear here when they contact you"
+              : "Start a conversation with a landowner"}
+          </Text>
+          {connectionStatus !== "connected" && (
+            <Text style={styles.connectionWarning}>
+              Connection: {connectionStatus}
+            </Text>
+          )}
+        </View>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
@@ -514,6 +671,13 @@ const ChatScreen = ({ navigation, onClose }) => {
           </TouchableOpacity>
         )}
         <Text style={styles.headerTitle}>Messages</Text>
+
+        {/* Connection status indicator */}
+        {connectionStatus !== "connected" && (
+          <View style={styles.connectionIndicator}>
+            <Text style={styles.connectionText}>{connectionStatus}</Text>
+          </View>
+        )}
       </LinearGradient>
 
       {/* Tab Buttons - Show only if user is not a landowner */}
@@ -577,7 +741,7 @@ const ChatScreen = ({ navigation, onClose }) => {
         />
       </View>
 
-      {/* Content */}
+      {/* Enhanced Content with better error handling */}
       {isLandowner ? (
         // Landowner view - only shows chats
         <FlatList
@@ -585,21 +749,11 @@ const ChatScreen = ({ navigation, onClose }) => {
           renderItem={renderChatItem}
           keyExtractor={(item) => item._id}
           ListEmptyComponent={
-            chatsLoading ? (
-              <ActivityIndicator style={styles.loader} color="#FE7A3A" />
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={48}
-                  color="#D1D5DB"
-                />
-                <Text style={styles.emptyStateText}>No messages yet</Text>
-                <Text style={styles.emptyStateSubtext}>
-                  Users will appear here when they contact you
-                </Text>
-              </View>
-            )
+            chatsLoading
+              ? renderEmptyState("chats-loading")
+              : chatsError
+              ? renderEmptyState("chats-error")
+              : renderEmptyState("chats-empty")
           }
         />
       ) : selectedTab === "contacts" ? (
@@ -611,6 +765,20 @@ const ChatScreen = ({ navigation, onClose }) => {
           ListEmptyComponent={
             landownersLoading ? (
               <ActivityIndicator style={styles.loader} color="#FE7A3A" />
+            ) : landownersError ? (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={48}
+                  color="#EF4444"
+                />
+                <Text style={styles.emptyStateText}>
+                  Error loading landowners
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  {landownersError.message || "Please try again"}
+                </Text>
+              </View>
             ) : (
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={48} color="#D1D5DB" />
@@ -626,21 +794,11 @@ const ChatScreen = ({ navigation, onClose }) => {
           renderItem={renderChatItem}
           keyExtractor={(item) => item._id}
           ListEmptyComponent={
-            chatsLoading ? (
-              <ActivityIndicator style={styles.loader} color="#FE7A3A" />
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={48}
-                  color="#D1D5DB"
-                />
-                <Text style={styles.emptyStateText}>No chats yet</Text>
-                <Text style={styles.emptyStateSubtext}>
-                  Start a conversation with a landowner
-                </Text>
-              </View>
-            )
+            chatsLoading
+              ? renderEmptyState("chats-loading")
+              : chatsError
+              ? renderEmptyState("chats-error")
+              : renderEmptyState("chats-empty")
           }
         />
       )}
@@ -648,6 +806,7 @@ const ChatScreen = ({ navigation, onClose }) => {
   );
 };
 
+// Add connection status styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -832,6 +991,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#9CA3AF",
     marginTop: 4,
+  },
+  retryButton: {
+    backgroundColor: "#FE7A3A",
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  connectionIndicator: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  connectionText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  connectionWarning: {
+    fontSize: 12,
+    color: "#F59E0B",
+    marginTop: 8,
+    fontStyle: "italic",
   },
 });
 

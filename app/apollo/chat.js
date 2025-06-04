@@ -1,4 +1,4 @@
-import { gql } from '@apollo/client';
+import { gql } from "@apollo/client";
 
 // Resolvers for Chat
 const resolvers = {
@@ -59,11 +59,13 @@ export const GET_USER_CHATS = gql`
 
 export const GET_CHAT_MESSAGES = gql`
   query GetChatMessages($roomId: ID!) {
-    getRoomMessages(room_id: $roomId) {
+    getRoomMessages(room_id: $roomId, limit: 100) {
       _id
       message
       sender_id
       created_at
+      message_type
+      read_by
     }
   }
 `;
@@ -93,8 +95,18 @@ export const SEND_MESSAGE = gql`
     sendMessage(input: $input) {
       _id
       message
+      user_id
       sender_id
+      room_id
       created_at
+      updated_at
+      message_type
+      read_by
+      sender {
+        _id
+        name
+        email
+      }
     }
   }
 `;
@@ -105,33 +117,70 @@ export const DELETE_ROOM = gql`
   }
 `;
 
-// Subscriptions
-export const ROOM_UPDATED = gql`
-  subscription RoomUpdated($userId: ID!) {
-    roomUpdated(userId: $userId) {
+// Enhanced Subscriptions with proper structure
+export const MESSAGE_RECEIVED = gql`
+  subscription MessageReceived($room_id: ID!) {
+    messageReceived(room_id: $room_id) {
       _id
-      name
-      participants {
+      message
+      user_id
+      sender_id
+      room_id
+      created_at
+      updated_at
+      message_type
+      read_by
+      sender {
         _id
         name
         email
       }
-      last_message {
-        message
-        created_at
-      }
-      participant_count
     }
   }
 `;
 
 export const MESSAGE_SENT = gql`
-  subscription MessageReceived($roomId: ID!) {
-    messageReceived(room_id: $roomId) {
+  subscription MessageSent($room_id: ID!) {
+    messageSent(room_id: $room_id) {
+      _id
+      message
+      user_id
+      sender_id
+      room_id
+      created_at
+      updated_at
+      message_type
+      read_by
+      sender {
+        _id
+        name
+        email
+      }
+    }
+  }
+`;
+
+// Enhanced room update subscription
+export const ROOM_UPDATED = gql`
+  subscription RoomMessageUpdate($user_id: ID!) {
+    roomMessageUpdate(user_id: $user_id) {
       _id
       message
       sender_id
+      room_id
       created_at
+      sender {
+        _id
+        name
+      }
+      room {
+        _id
+        name
+        participants {
+          _id
+          name
+        }
+      }
     }
   }
 `;

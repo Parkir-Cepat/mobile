@@ -200,8 +200,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
       }
     },
     onError: (error) => {
-      // Only log subscription errors, don't show in UI
-      console.log("MESSAGE_RECEIVED subscription error:", error.message);
+      console.error("MESSAGE_RECEIVED subscription error:", error);
       setConnectionStatus("error");
     },
   });
@@ -210,11 +209,14 @@ const ChatRoomScreen = ({ route, navigation }) => {
   const { data: fallbackSubscriptionData, error: fallbackSubscriptionError } =
     useSubscription(MESSAGE_SENT, {
       variables: { room_id: roomId },
-      skip: !roomId || !user?._id || !subscriptionError,
+      skip: !roomId || !user?._id || !subscriptionError, // Only use if primary subscription fails
       shouldResubscribe: true,
       fetchPolicy: "no-cache",
       onData: ({ data: subscriptionPayload }) => {
-        console.log("MESSAGE_SENT fallback subscription data:", subscriptionPayload);
+        console.log(
+          "MESSAGE_SENT fallback subscription data:",
+          subscriptionPayload
+        );
 
         try {
           const newMessage = subscriptionPayload?.data?.messageSent;
@@ -250,16 +252,18 @@ const ChatRoomScreen = ({ route, navigation }) => {
         }
       },
       onError: (error) => {
-        // Only log fallback subscription errors
-        console.log("MESSAGE_SENT fallback subscription error:", error.message);
+        console.error("MESSAGE_SENT fallback subscription error:", error);
       },
     });
 
   // Monitor connection status
   useEffect(() => {
     if (subscriptionError && fallbackSubscriptionError) {
-      console.log("Both subscriptions failed - using polling mode");
-      setConnectionStatus("polling");
+      console.error("Both subscriptions failed:", {
+        primary: subscriptionError,
+        fallback: fallbackSubscriptionError,
+      });
+      setConnectionStatus("disconnected");
     } else if (subscriptionError && !fallbackSubscriptionError) {
       console.log("Using fallback subscription");
       setConnectionStatus("fallback");
@@ -267,28 +271,6 @@ const ChatRoomScreen = ({ route, navigation }) => {
       setConnectionStatus("connected");
     }
   }, [subscriptionError, fallbackSubscriptionError]);
-
-  // Connection status text update
-  const getConnectionStatusText = () => {
-    if (isAutoRefreshing) {
-      return "Updating...";
-    }
-
-    switch (connectionStatus) {
-      case "connecting":
-        return "Connecting...";
-      case "connected":
-        return `${user?.role === "landowner" ? "User" : "Landowner"} • Real-time`;
-      case "fallback":
-        return "Connected (Fallback) • Real-time";
-      case "polling":
-        return "Connected • Auto-refresh";
-      case "error":
-        return "Connected • Auto-refresh";
-      default:
-        return "Auto-refresh enabled";
-    }
-  };
 
   // Enhanced scroll to bottom function
   const scrollToBottom = useCallback(() => {
@@ -626,34 +608,46 @@ const ChatRoomScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: "#F0F4F8",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: Platform.OS === "ios" ? 44 : 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingTop: Platform.OS === "ios" ? 50 : 16,
+    shadowColor: "#FE7A3A",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   backButton: {
-    padding: 8,
-    marginRight: 12,
+    padding: 10,
+    marginRight: 16,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerInfo: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 22,
+    fontWeight: "700",
     color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: "rgba(255, 255, 255, 0.8)",
     marginTop: 2,
+    fontWeight: "500",
   },
   refreshButton: {
-    padding: 8,
+    padding: 10,
     borderRadius: 20,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
@@ -670,37 +664,46 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#F0F4F8",
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#666",
+    marginTop: 16,
+    fontSize: 18,
+    color: "#64748B",
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   messagesList: {
     flex: 1,
+    paddingTop: 8,
   },
   messagesContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    paddingBottom: 20,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingTop: 50,
+    paddingTop: 100,
+    paddingHorizontal: 32,
   },
   emptyText: {
-    fontSize: 16,
-    color: "#666",
-    fontWeight: "500",
+    fontSize: 20,
+    color: "#475569",
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: "#999",
-    marginTop: 4,
+    fontSize: 16,
+    color: "#94A3B8",
+    marginTop: 8,
+    textAlign: "center",
+    lineHeight: 24,
   },
   messageContainer: {
-    marginVertical: 4,
+    marginVertical: 6,
   },
   ownMessageContainer: {
     alignItems: "flex-end",
@@ -709,86 +712,126 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   messageBubble: {
-    maxWidth: "80%",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  ownMessageBubble: {
-    backgroundColor: "#FE7A3A",
-    borderBottomRightRadius: 6,
-  },
-  otherMessageBubble: {
-    backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: 6,
+    maxWidth: "85%",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 24,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 1,
     },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
+  },
+  ownMessageBubble: {
+    backgroundColor: "#FE7A3A",
+    borderBottomRightRadius: 8,
+    shadowColor: "#FE7A3A",
+    shadowOpacity: 0.2,
+  },
+  otherMessageBubble: {
+    backgroundColor: "#FFFFFF",
+    borderBottomLeftRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   optimisticMessage: {
     opacity: 0.7,
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
+    letterSpacing: 0.2,
   },
   ownMessageText: {
     color: "#FFFFFF",
+    fontWeight: "500",
   },
   otherMessageText: {
-    color: "#333",
+    color: "#1E293B",
+    fontWeight: "500",
   },
   messageTime: {
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 6,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   ownMessageTime: {
     color: "rgba(255, 255, 255, 0.8)",
     textAlign: "right",
   },
   otherMessageTime: {
-    color: "#999",
+    color: "#94A3B8",
     textAlign: "left",
   },
   inputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: "#E5E5E5",
+    borderTopColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 8,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 25,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minHeight: 50,
+    backgroundColor: "#F7FAFC",
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    minHeight: 56,
+    borderWidth: 2,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   textInput: {
     flex: 1,
     fontSize: 16,
-    color: "#333",
-    maxHeight: 100,
+    color: "#1E293B",
+    maxHeight: 120,
     paddingVertical: 8,
+    paddingRight: 12,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   sendButton: {
     backgroundColor: "#FE7A3A",
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    borderRadius: 24,
+    width: 48,
+    height: 48,
     justifyContent: "center",
     alignItems: "center",
     marginLeft: 8,
+    shadowColor: "#FE7A3A",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   sendButtonDisabled: {
-    backgroundColor: "#CCC",
+    backgroundColor: "#CBD5E0",
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });
 

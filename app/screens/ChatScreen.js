@@ -58,35 +58,52 @@ console.warn = (...args) => {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const DELETE_WIDTH = 80;
+const DELETE_WIDTH = 70; // Reduced delete width
 
 const SwipeableRow = ({ children, onDelete }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (evt, gestureState) => {
         return (
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) &&
-          Math.abs(gestureState.dx) > 20
+          Math.abs(gestureState.dx) > 15
         );
+      },
+      onPanResponderGrant: () => {
+        translateX.setOffset(translateX._value);
+        translateX.setValue(0);
       },
       onPanResponderMove: (evt, gestureState) => {
         if (gestureState.dx < 0) {
           translateX.setValue(Math.max(gestureState.dx, -DELETE_WIDTH));
+        } else {
+          translateX.setValue(Math.min(gestureState.dx, 0));
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
-        if (gestureState.dx < -40) {
+        translateX.flattenOffset();
+
+        if (gestureState.dx < -30) {
+          // Show delete button
+          setShowDelete(true);
           Animated.spring(translateX, {
             toValue: -DELETE_WIDTH,
             useNativeDriver: false,
+            tension: 100,
+            friction: 8,
           }).start();
         } else {
+          // Hide delete button
+          setShowDelete(false);
           Animated.spring(translateX, {
             toValue: 0,
             useNativeDriver: false,
+            tension: 100,
+            friction: 8,
           }).start();
         }
       },
@@ -94,26 +111,32 @@ const SwipeableRow = ({ children, onDelete }) => {
   ).current;
 
   const handleDelete = () => {
+    if (isDeleting) return;
     setIsDeleting(true);
+
     Animated.timing(translateX, {
       toValue: -SCREEN_WIDTH,
-      duration: 300,
+      duration: 250,
       useNativeDriver: false,
     }).start(() => {
       onDelete();
       setIsDeleting(false);
+      setShowDelete(false);
     });
   };
 
   return (
     <View style={styles.swipeContainer}>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={handleDelete}
-        disabled={isDeleting}
-      >
-        <Ionicons name="trash-outline" size={24} color="#FFF" />
-      </TouchableOpacity>
+      <View style={styles.deleteButtonContainer}>
+        <TouchableOpacity
+          style={[styles.deleteButton, { opacity: showDelete ? 1 : 0 }]}
+          onPress={handleDelete}
+          disabled={isDeleting || !showDelete}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
       <Animated.View
         style={[
           styles.rowContent,
@@ -704,33 +727,45 @@ const ChatScreen = ({ navigation, onClose }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F8FAFC",
   },
   header: {
     paddingVertical: 16,
     paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
+    shadowColor: "#FE7A3A",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
   },
   closeButton: {
     marginRight: 12,
-    padding: 4,
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: "700",
     color: "#FFFFFF",
     flex: 1,
+    letterSpacing: 0.3,
   },
   tabContainer: {
     flexDirection: "row",
     paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#E2E8F0",
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
   },
   activeTab: {
@@ -739,41 +774,53 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#6B7280",
+    fontWeight: "600",
+    color: "#64748B",
   },
   activeTabText: {
     color: "#FE7A3A",
-    fontWeight: "600",
+    fontWeight: "700",
   },
   searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: "#E2E8F0",
   },
   searchIcon: {
-    marginRight: 8,
+    position: "absolute",
+    left: 32,
+    top: 26,
+    zIndex: 1,
   },
   searchInput: {
-    flex: 1,
     fontSize: 16,
-    color: "#1F2937",
-    paddingVertical: 8,
-    fontFamily: Platform.select({
-      ios: "System",
-      android: "Roboto",
-      default: "System",
-    }),
+    color: "#1E293B",
+    paddingVertical: 12,
+    paddingLeft: 44,
+    paddingRight: 16,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   contactItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    marginHorizontal: 12,
+    marginVertical: 4,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   contactAvatar: {
     width: 48,
@@ -785,7 +832,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "600",
     color: "#D97706",
   },
@@ -794,37 +841,63 @@ const styles = StyleSheet.create({
   },
   contactName: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#1F2937",
-    marginBottom: 4,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginBottom: 2,
   },
   contactRole: {
     fontSize: 14,
-    color: "#6B7280",
+    color: "#64748B",
   },
   swipeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EF4444",
+    marginHorizontal: 12,
+    marginVertical: 4,
+    position: "relative",
   },
-  rowContent: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  deleteButton: {
+  deleteButtonContainer: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
     width: DELETE_WIDTH,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1,
+  },
+  deleteButton: {
     backgroundColor: "#EF4444",
-    height: "100%",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#EF4444",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  rowContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   chatItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
     backgroundColor: "#FFFFFF",
+    borderRadius: 12,
   },
   chatAvatar: {
     width: 48,
@@ -840,18 +913,18 @@ const styles = StyleSheet.create({
   },
   chatName: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#1F2937",
+    fontWeight: "600",
+    color: "#1E293B",
     marginBottom: 4,
   },
   lastMessage: {
     fontSize: 14,
-    color: "#6B7280",
+    color: "#64748B",
     marginBottom: 2,
   },
   messageTime: {
     fontSize: 12,
-    color: "#9CA3AF",
+    color: "#94A3B8",
   },
   unreadBadge: {
     backgroundColor: "#FE7A3A",
@@ -863,8 +936,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unreadCount: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
     color: "#FFFFFF",
   },
   loader: {
@@ -873,47 +946,41 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
+    paddingVertical: 60,
+    paddingHorizontal: 20,
   },
   emptyStateText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#6B7280",
-    marginTop: 12,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#475569",
+    marginTop: 16,
+    textAlign: "center",
   },
   emptyStateSubtext: {
     fontSize: 14,
-    color: "#9CA3AF",
-    marginTop: 4,
+    color: "#94A3B8",
+    marginTop: 6,
+    textAlign: "center",
+    lineHeight: 20,
   },
   retryButton: {
     backgroundColor: "#FE7A3A",
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 16,
   },
   retryButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 14,
   },
-  connectionIndicator: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  connectionText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "600",
-  },
   connectionWarning: {
     fontSize: 12,
     color: "#F59E0B",
     marginTop: 8,
     fontStyle: "italic",
+    textAlign: "center",
   },
 });
 

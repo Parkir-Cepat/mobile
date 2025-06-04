@@ -254,6 +254,7 @@ export default function UserProfile() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.balanceButton, styles.secondaryButton]}
+                onPress={() => navigation.navigate("HistoryScreen")}
               >
                 <Ionicons name="time-outline" size={18} color="#6366f1" />
                 <Text style={styles.secondaryButtonText}>History</Text>

@@ -249,9 +249,8 @@ export default function HomeScreen() {
     return `${diffHrs}h ${diffMins}m`;
   };
 
-  const handleScanQR = () => {
-    // Navigate to scan QR screen
-    navigation.navigate("ScanQRScreen");
+  const handleMyBooking = () => {
+    navigation.navigate("MyBookingsScreen");
   };
 
   const handleChat = () => {
@@ -484,11 +483,11 @@ export default function HomeScreen() {
             <Text style={styles.menuText}>Find Parking</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={handleScanQR}>
-            <View style={[styles.menuIcon, { backgroundColor: "#FFF1E7" }]}>
-              <Ionicons name="qr-code-outline" size={24} color="#FE7A3A" />
+          <TouchableOpacity style={styles.menuItem} onPress={handleMyBooking}>
+            <View style={[styles.menuIcon, { backgroundColor: "#E0F2FE" }]}>
+              <Ionicons name="calendar-outline" size={24} color="#0284C7" />
             </View>
-            <Text style={styles.menuText}>Scan QR</Text>
+            <Text style={styles.menuText}>My Booking</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem} onPress={handleTopUp}>
@@ -516,62 +515,27 @@ export default function HomeScreen() {
           </View>
 
           {/* Dummy content for recent bookings - to be replaced with real data */}
-          {activeBookings.length === 0 && (
-            <View style={styles.emptyBookingsContainer}>
-              <Ionicons name="calendar-outline" size={60} color="#D1D5DB" />
-              <Text style={styles.emptyBookingsText}>
-                No recent bookings found
-              </Text>
-              <Text style={styles.emptyBookingsSubtitle}>
-                Your recent bookings will appear here
-              </Text>
-            </View>
-          )}
 
-          {/* Recent bookings list - currently using activeBookings state */}
-          {activeBookings.length > 0 && (
-            <FlatList
-              data={activeBookings}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recentBookingsList}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.recentBookingCard}
-                  onPress={() =>
-                    navigation.navigate("BookingDetailsScreen", {
-                      bookingId: item.id,
-                    })
-                  }
-                >
-                  <View style={styles.recentBookingInfo}>
-                    <Text style={styles.parkingNameText}>
-                      {item.parkingName}
-                    </Text>
-                    <Text style={styles.bookingStatusActive}>Active</Text>
-                  </View>
-                  <View style={styles.recentBookingDetails}>
-                    <View style={styles.bookingDetail}>
-                      <Ionicons name="car-outline" size={16} color="#6B7280" />
-                      <Text style={styles.bookingDetailText}>
-                        {item.vehicleNo}
-                      </Text>
-                    </View>
-                    <View style={styles.bookingDetail}>
-                      <Ionicons name="time-outline" size={16} color="#6B7280" />
-                      <Text style={styles.bookingDetailText}>
-                        {new Date(item.entryTime).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              )}
+          <View
+            style={{ padding: 24, alignItems: "center", paddingBottom: 80 }}
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={48}
+              color="#9CA3AF"
+              style={{ marginBottom: 12 }}
             />
-          )}
+            <Text
+              style={{
+                color: "#6B7280",
+                fontSize: 18,
+                fontWeight: "600",
+                marginBottom: 4,
+              }}
+            >
+              No Active Bookings Yet
+            </Text>
+          </View>
         </View>
 
         {/* Nearby Parking Section */}

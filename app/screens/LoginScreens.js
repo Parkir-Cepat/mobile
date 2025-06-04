@@ -57,7 +57,8 @@ export default function LoginScreen() {
   const navigation = useNavigation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const { setIsSignIn, setRole, setUser } = useAuth();
   const [loginGoogle] = useMutation(GOOGLE_LOGIN);
@@ -131,7 +132,8 @@ export default function LoginScreen() {
             password,
           },
         },
-      });      await SecureStore.setItemAsync("access_token", data.login.token);
+      });
+      await SecureStore.setItemAsync("access_token", data.login.token);
       await SecureStore.setItemAsync("user_role", data.login.user.role);
       await SecureStore.setItemAsync(
         "user_data",
@@ -409,7 +411,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 25,
-    paddingTop: 30,
+    paddingTop: 60,
     paddingBottom: 100,
   },
   logoContainer: {

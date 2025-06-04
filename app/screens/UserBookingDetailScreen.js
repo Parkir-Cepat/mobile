@@ -553,7 +553,12 @@ export default function UserBookingDetailScreen() {
               Alert.alert(
                 "Insufficient Balance",
                 `You need Rp ${booking.cost.toLocaleString()} but only have Rp ${booking.user.saldo.toLocaleString()}.\n\nPlease top up your balance first.`,
-                [{ text: "OK" }]
+                [
+                  {
+                    text: "OK",
+                    onPress: () => navigation.navigate("TopUpScreen"),
+                  },
+                ]
               );
               return;
             }

@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  AppState,
 } from "react-native";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,15 +40,20 @@ const ChatRoomScreen = ({ route, navigation }) => {
   const [messages, setMessages] = useState([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
+  const [lastMessageCount, setLastMessageCount] = useState(0);
   const flatListRef = useRef();
+  const autoRefreshInterval = useRef(null);
+  const appState = useRef(AppState.currentState);
 
-  // Enhanced query with better error handling
+  // Enhanced query with polling
   const { data, loading, error, refetch } = useQuery(GET_CHAT_MESSAGES, {
     variables: { roomId },
     fetchPolicy: "cache-and-network",
     nextFetchPolicy: "cache-first",
     errorPolicy: "all",
     notifyOnNetworkStatusChange: true,
+    pollInterval: 0, // We'll handle polling manually for better control
     onCompleted: (data) => {
       console.log("Messages loaded:", data?.getRoomMessages?.length || 0);
       if (data?.getRoomMessages && Array.isArray(data.getRoomMessages)) {
@@ -65,28 +71,44 @@ const ChatRoomScreen = ({ route, navigation }) => {
             (a, b) => new Date(a.created_at) - new Date(b.created_at)
           );
 
+          // Check if new messages arrived
+          const newMessageCount = sortedMessages.length;
+          if (newMessageCount > lastMessageCount && !isInitialLoad) {
+            // New message detected, scroll to bottom
+            setTimeout(() => {
+              scrollToBottom();
+            }, 100);
+          }
+          setLastMessageCount(newMessageCount);
+
           setMessages(sortedMessages);
           setIsInitialLoad(false);
           setConnectionStatus("connected");
+          setIsAutoRefreshing(false);
 
           // Auto scroll to bottom after initial load
-          setTimeout(() => {
-            scrollToBottom();
-          }, 200);
+          if (isInitialLoad) {
+            setTimeout(() => {
+              scrollToBottom();
+            }, 200);
+          }
         } catch (error) {
           console.error("Error processing messages:", error);
           setMessages([]);
           setIsInitialLoad(false);
+          setIsAutoRefreshing(false);
         }
       } else {
         setMessages([]);
         setIsInitialLoad(false);
+        setIsAutoRefreshing(false);
       }
     },
     onError: (error) => {
       console.error("Query error:", error);
       setIsInitialLoad(false);
       setConnectionStatus("error");
+      setIsAutoRefreshing(false);
     },
   });
 
@@ -125,155 +147,130 @@ const ChatRoomScreen = ({ route, navigation }) => {
     },
   });
 
-  // Enhanced subscription with robust error handling
+  // Primary subscription with MESSAGE_RECEIVED
   const {
-    data: primarySubscriptionData,
-    error: primarySubscriptionError,
-    loading: primarySubscriptionLoading,
+    data: subscriptionData,
+    error: subscriptionError,
+    loading: subscriptionLoading,
   } = useSubscription(MESSAGE_RECEIVED, {
     variables: { room_id: roomId },
     skip: !roomId || !user?._id,
     shouldResubscribe: true,
     fetchPolicy: "no-cache",
-    errorPolicy: "all",
     onData: ({ data: subscriptionPayload }) => {
-      console.log("PRIMARY MESSAGE_RECEIVED:", subscriptionPayload);
+      console.log("MESSAGE_RECEIVED subscription data:", subscriptionPayload);
 
       try {
         const newMessage = subscriptionPayload?.data?.messageReceived;
-        if (newMessage && newMessage._id) {
-          handleIncomingMessage(newMessage);
+        if (newMessage && newMessage._id && newMessage.message) {
+          console.log("Processing new message from subscription:", newMessage);
+
+          const processedMessage = {
+            ...newMessage,
+            created_at: newMessage.created_at || new Date().toISOString(),
+            message: String(newMessage.message || ""),
+            sender_id: newMessage.sender_id || newMessage.sender?._id,
+          };
+
+          setMessages((prevMessages) => {
+            const messageExists = prevMessages.some(
+              (msg) => msg._id === processedMessage._id
+            );
+
+            if (!messageExists) {
+              console.log(
+                "Adding new message to state:",
+                processedMessage.message
+              );
+              const updatedMessages = [...prevMessages, processedMessage].sort(
+                (a, b) => new Date(a.created_at) - new Date(b.created_at)
+              );
+
+              setTimeout(() => scrollToBottom(), 100);
+              return updatedMessages;
+            }
+
+            return prevMessages;
+          });
+
+          setConnectionStatus("connected");
         }
       } catch (error) {
-        console.error("Error processing primary subscription:", error);
+        console.error("Error processing subscription data:", error);
       }
     },
     onError: (error) => {
-      console.error("PRIMARY subscription error:", error);
-      setConnectionStatus("primary_failed");
-    },
-    onCompleted: () => {
-      console.log("PRIMARY subscription established");
-      setConnectionStatus("connected");
+      console.error("MESSAGE_RECEIVED subscription error:", error);
+      setConnectionStatus("error");
     },
   });
 
-  // Fallback subscription
+  // Fallback subscription with MESSAGE_SENT
   const { data: fallbackSubscriptionData, error: fallbackSubscriptionError } =
     useSubscription(MESSAGE_SENT, {
       variables: { room_id: roomId },
-      skip: !roomId || !user?._id || !primarySubscriptionError,
+      skip: !roomId || !user?._id || !subscriptionError, // Only use if primary subscription fails
       shouldResubscribe: true,
       fetchPolicy: "no-cache",
-      errorPolicy: "all",
       onData: ({ data: subscriptionPayload }) => {
-        console.log("FALLBACK MESSAGE_SENT:", subscriptionPayload);
+        console.log(
+          "MESSAGE_SENT fallback subscription data:",
+          subscriptionPayload
+        );
 
         try {
           const newMessage = subscriptionPayload?.data?.messageSent;
-          if (newMessage && newMessage._id) {
-            handleIncomingMessage(newMessage);
+          if (newMessage && newMessage._id && newMessage.message) {
+            const processedMessage = {
+              ...newMessage,
+              created_at: newMessage.created_at || new Date().toISOString(),
+              message: String(newMessage.message || ""),
+              sender_id: newMessage.sender_id || newMessage.sender?._id,
+            };
+
+            setMessages((prevMessages) => {
+              const messageExists = prevMessages.some(
+                (msg) => msg._id === processedMessage._id
+              );
+              if (!messageExists) {
+                const updatedMessages = [
+                  ...prevMessages,
+                  processedMessage,
+                ].sort(
+                  (a, b) => new Date(a.created_at) - new Date(b.created_at)
+                );
+                setTimeout(() => scrollToBottom(), 100);
+                return updatedMessages;
+              }
+              return prevMessages;
+            });
+
+            setConnectionStatus("connected");
           }
         } catch (error) {
-          console.error("Error processing fallback subscription:", error);
+          console.error("Error processing fallback subscription data:", error);
         }
       },
       onError: (error) => {
-        console.error("FALLBACK subscription error:", error);
-        setConnectionStatus("both_failed");
-      },
-      onCompleted: () => {
-        console.log("FALLBACK subscription established");
-        setConnectionStatus("fallback_connected");
+        console.error("MESSAGE_SENT fallback subscription error:", error);
       },
     });
 
-  // Enhanced message handler
-  const handleIncomingMessage = useCallback(
-    (newMessage) => {
-      if (!newMessage || !newMessage._id || !newMessage.message) {
-        console.warn("Invalid message received:", newMessage);
-        return;
-      }
-
-      console.log("Processing incoming message:", newMessage.message);
-
-      const processedMessage = {
-        ...newMessage,
-        created_at: newMessage.created_at || new Date().toISOString(),
-        message: String(newMessage.message || ""),
-        sender_id:
-          newMessage.sender_id || newMessage.user_id || newMessage.sender?._id,
-      };
-
-      setMessages((prevMessages) => {
-        // Check if message already exists
-        const messageExists = prevMessages.some(
-          (msg) => msg._id === processedMessage._id
-        );
-
-        if (!messageExists) {
-          console.log("Adding new message to state:", processedMessage.message);
-          const updatedMessages = [...prevMessages, processedMessage].sort(
-            (a, b) => new Date(a.created_at) - new Date(b.created_at)
-          );
-
-          // Auto scroll to bottom
-          setTimeout(() => scrollToBottom(), 100);
-          return updatedMessages;
-        }
-
-        console.log("Message already exists, skipping:", processedMessage._id);
-        return prevMessages;
-      });
-
-      setConnectionStatus("connected");
-    },
-    [scrollToBottom]
-  );
-
-  // Enhanced connection status monitoring
+  // Monitor connection status
   useEffect(() => {
-    if (primarySubscriptionError && fallbackSubscriptionError) {
+    if (subscriptionError && fallbackSubscriptionError) {
       console.error("Both subscriptions failed:", {
-        primary: primarySubscriptionError,
+        primary: subscriptionError,
         fallback: fallbackSubscriptionError,
       });
       setConnectionStatus("disconnected");
-
-      // Show user-friendly error after multiple failures
-      if (primarySubscriptionError.networkError?.statusCode === 400) {
-        console.error("WebSocket not supported or misconfigured");
-        // Fallback to polling
-        startPolling();
-      }
-    } else if (primarySubscriptionError && !fallbackSubscriptionError) {
+    } else if (subscriptionError && !fallbackSubscriptionError) {
       console.log("Using fallback subscription");
       setConnectionStatus("fallback");
-    } else if (!primarySubscriptionError) {
+    } else if (!subscriptionError) {
       setConnectionStatus("connected");
     }
-  }, [primarySubscriptionError, fallbackSubscriptionError]);
-
-  // Polling fallback for when WebSocket fails
-  const startPolling = useCallback(() => {
-    console.log("Starting polling fallback mechanism");
-    setConnectionStatus("polling");
-
-    const pollingInterval = setInterval(async () => {
-      try {
-        console.log("Polling for new messages");
-        await refetch();
-      } catch (error) {
-        console.error("Polling error:", error);
-      }
-    }, 3000); // Poll every 3 seconds
-
-    // Cleanup on unmount
-    return () => {
-      clearInterval(pollingInterval);
-    };
-  }, [refetch]);
+  }, [subscriptionError, fallbackSubscriptionError]);
 
   // Enhanced scroll to bottom function
   const scrollToBottom = useCallback(() => {
@@ -285,6 +282,73 @@ const ChatRoomScreen = ({ route, navigation }) => {
       }
     }
   }, [messages.length]);
+
+  // Auto refresh function
+  const performAutoRefresh = useCallback(async () => {
+    if (loading || isAutoRefreshing) return;
+
+    try {
+      setIsAutoRefreshing(true);
+      console.log("Auto-refreshing messages...");
+      await refetch();
+    } catch (error) {
+      console.error("Auto refresh error:", error);
+      setIsAutoRefreshing(false);
+    }
+  }, [loading, isAutoRefreshing, refetch]);
+
+  // Setup auto refresh interval
+  useEffect(() => {
+    if (!roomId || !user?._id) return;
+
+    // Start auto refresh when component mounts
+    const startAutoRefresh = () => {
+      if (autoRefreshInterval.current) {
+        clearInterval(autoRefreshInterval.current);
+      }
+
+      // Refresh every 1 second (1000ms) for near real-time experience
+      // You can adjust this interval: 500ms for more frequent, 2000ms for less frequent
+      autoRefreshInterval.current = setInterval(() => {
+        if (appState.current === "active") {
+          performAutoRefresh();
+        }
+      }, 1000);
+    };
+
+    // Start auto refresh after initial load
+    if (!isInitialLoad) {
+      startAutoRefresh();
+    }
+
+    return () => {
+      if (autoRefreshInterval.current) {
+        clearInterval(autoRefreshInterval.current);
+        autoRefreshInterval.current = null;
+      }
+    };
+  }, [roomId, user?._id, isInitialLoad, performAutoRefresh]);
+
+  // Handle app state changes (pause auto refresh when app is in background)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        // App came to foreground, immediately refresh and resume auto refresh
+        console.log("App came to foreground, refreshing...");
+        performAutoRefresh();
+      }
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
+    return () => subscription?.remove();
+  }, [performAutoRefresh]);
 
   // Enhanced message sending with optimistic updates
   const handleSendMessage = async () => {
@@ -324,14 +388,18 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
       console.log("Message sent to GraphQL mutation");
 
-      // Remove optimistic message when real message is received
+      // Remove optimistic message
       setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
+
+      // Immediately refresh to get the real message
+      setTimeout(() => {
+        performAutoRefresh();
+      }, 100);
     } catch (error) {
       console.error("Error sending message:", error);
-
-      // Remove optimistic message and restore input on error
       setMessages((prev) => prev.filter((msg) => msg._id !== tempId));
       setMessage(messageText);
+      Alert.alert("Error", "Failed to send message. Please try again.");
     }
   };
 
@@ -421,44 +489,18 @@ const ChatRoomScreen = ({ route, navigation }) => {
     );
   }
 
-  // Connection status indicator
-  const getConnectionStatusText = () => {
-    switch (connectionStatus) {
-      case "connecting":
-        return "Connecting...";
-      case "connected":
-        return user?.role === "landowner" ? "User" : "Landowner";
-      case "fallback":
-        return "Connected (Fallback)";
-      case "fallback_connected":
-        return "Connected (Secondary)";
-      case "primary_failed":
-        return "Connecting (Fallback)";
-      case "both_failed":
-        return "Connection issues";
-      case "polling":
-        return "Connected (Polling)";
-      case "disconnected":
-        return "Disconnected";
-      case "error":
-        return "Connection error";
-      default:
-        return "Unknown status";
-    }
-  };
-
   const getConnectionStatusColor = () => {
+    if (isAutoRefreshing) {
+      return "rgba(255, 255, 0, 0.9)";
+    }
+
     switch (connectionStatus) {
       case "connected":
-      case "fallback_connected":
         return "rgba(255, 255, 255, 0.8)";
       case "connecting":
-      case "primary_failed":
         return "rgba(255, 255, 255, 0.6)";
       case "fallback":
-      case "polling":
         return "rgba(255, 255, 0, 0.8)";
-      case "both_failed":
       case "disconnected":
       case "error":
         return "rgba(255, 100, 100, 0.8)";
@@ -467,9 +509,15 @@ const ChatRoomScreen = ({ route, navigation }) => {
     }
   };
 
+  // Manual refresh with visual feedback
+  const handleManualRefresh = async () => {
+    console.log("Manual refresh triggered");
+    await performAutoRefresh();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enhanced header with better connection status */}
+      {/* Header */}
       <LinearGradient
         colors={["#FF9A62", "#FE7A3A"]}
         start={{ x: 0, y: 0 }}
@@ -489,34 +537,9 @@ const ChatRoomScreen = ({ route, navigation }) => {
               styles.headerSubtitle,
               { color: getConnectionStatusColor() },
             ]}
-          >
-            {getConnectionStatusText()}
-          </Text>
+          ></Text>
         </View>
-
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={() => {
-            console.log("Manual refresh triggered");
-            refetch();
-          }}
-        >
-          <Ionicons name="refresh" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
       </LinearGradient>
-
-      {/* Show connection warning if needed */}
-      {(connectionStatus === "both_failed" ||
-        connectionStatus === "polling") && (
-        <View style={styles.connectionWarning}>
-          <Ionicons name="warning-outline" size={16} color="#F59E0B" />
-          <Text style={styles.connectionWarningText}>
-            {connectionStatus === "polling"
-              ? "Real-time messaging unavailable. Using polling mode."
-              : "Connection issues detected. Messages may be delayed."}
-          </Text>
-        </View>
-      )}
 
       {/* Messages */}
       <KeyboardAvoidingView
@@ -529,63 +552,53 @@ const ChatRoomScreen = ({ route, navigation }) => {
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item, index) => {
-            if (item?._id) return item._id;
-            return `${index}-${item?.message?.substring(0, 10) || "unknown"}-${
-              item?.created_at || Date.now()
-            }`;
-          }}
-          contentContainerStyle={[
-            styles.messagesList,
-            messages.length === 0 && styles.emptyMessagesList,
-          ]}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={scrollToBottom}
-          onLayout={() => {
-            if (isInitialLoad && messages.length > 0) {
-              setTimeout(scrollToBottom, 100);
+            if (item && item._id) {
+              return item._id;
             }
+            return `message_${index}_${Date.now()}`;
           }}
-          removeClippedSubviews={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          ListEmptyComponent={
-            <View style={styles.emptyMessagesContainer}>
-              <Text style={styles.emptyMessagesText}>No messages yet</Text>
-              <Text style={styles.emptyMessagesSubtext}>
-                Start the conversation!
-              </Text>
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContainer}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => scrollToBottom()}
+          onLayout={() => scrollToBottom()}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Start the conversation!</Text>
             </View>
-          }
+          )}
         />
 
-        {/* Message Input */}
+        {/* Input Area */}
         <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            value={message}
-            onChangeText={setMessage}
-            multiline
-            maxLength={1000}
-            returnKeyType="send"
-            onSubmitEditing={handleSendMessage}
-            blurOnSubmit={false}
-          />
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!message.trim() || sendingMessage) && styles.sendButtonDisabled,
-            ]}
-            onPress={handleSendMessage}
-            disabled={!message.trim() || sendingMessage}
-          >
-            <Ionicons
-              name="send"
-              size={20}
-              color={message.trim() && !sendingMessage ? "#FFFFFF" : "#A1A1AA"}
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.textInput}
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Type a message..."
+              placeholderTextColor="#999"
+              multiline
+              maxLength={1000}
+              editable={!sendingMessage}
             />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!message.trim() || sendingMessage) &&
+                  styles.sendButtonDisabled,
+              ]}
+              onPress={handleSendMessage}
+              disabled={!message.trim() || sendingMessage}
+            >
+              {sendingMessage ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="send" size={20} color="#FFFFFF" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -595,16 +608,17 @@ const ChatRoomScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F8F9FA",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: Platform.OS === "android" ? 40 : 10,
-    paddingBottom: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: Platform.OS === "ios" ? 44 : 12,
   },
   backButton: {
+    padding: 8,
     marginRight: 12,
   },
   headerInfo: {
@@ -616,112 +630,23 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
   },
   refreshButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
+  refreshButtonActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+  },
+  rotatingIcon: {
+    transform: [{ rotate: "360deg" }],
+  },
   content: {
     flex: 1,
-  },
-  messagesList: {
-    padding: 16,
-  },
-  emptyMessagesList: {
-    flexGrow: 1,
-    justifyContent: "center",
-  },
-  emptyMessagesContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 40,
-  },
-  emptyMessagesText: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginBottom: 4,
-  },
-  emptyMessagesSubtext: {
-    fontSize: 14,
-    color: "#9CA3AF",
-  },
-  messageContainer: {
-    marginVertical: 4,
-    flexDirection: "row",
-  },
-  ownMessageContainer: {
-    justifyContent: "flex-end",
-  },
-  otherMessageContainer: {
-    justifyContent: "flex-start",
-  },
-  messageBubble: {
-    maxWidth: "80%",
-    padding: 12,
-    borderRadius: 16,
-  },
-  ownMessageBubble: {
-    backgroundColor: "#FE7A3A",
-    borderBottomRightRadius: 4,
-  },
-  otherMessageBubble: {
-    backgroundColor: "#F3F4F6",
-    borderBottomLeftRadius: 4,
-  },
-  messageText: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  ownMessageText: {
-    color: "#FFFFFF",
-  },
-  otherMessageText: {
-    color: "#1F2937",
-  },
-  messageTime: {
-    fontSize: 12,
-  },
-  ownMessageTime: {
-    color: "rgba(255, 255, 255, 0.8)",
-    textAlign: "right",
-  },
-  otherMessageTime: {
-    color: "#6B7280",
-  },
-  optimisticMessage: {
-    opacity: 0.6,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    maxHeight: 100,
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FE7A3A",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sendButtonDisabled: {
-    backgroundColor: "#E5E7EB",
   },
   loadingContainer: {
     flex: 1,
@@ -729,25 +654,123 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#6B7280",
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
   },
-  connectionWarning: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: "#FEF3C7",
-    borderBottomWidth: 1,
-    borderBottomColor: "#F59E0B",
-  },
-  connectionWarningText: {
-    marginLeft: 8,
-    fontSize: 12,
-    color: "#D97706",
+  messagesList: {
     flex: 1,
+  },
+  messagesContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 50,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#666",
+    fontWeight: "500",
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: "#999",
+    marginTop: 4,
+  },
+  messageContainer: {
+    marginVertical: 4,
+  },
+  ownMessageContainer: {
+    alignItems: "flex-end",
+  },
+  otherMessageContainer: {
+    alignItems: "flex-start",
+  },
+  messageBubble: {
+    maxWidth: "80%",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  ownMessageBubble: {
+    backgroundColor: "#FE7A3A",
+    borderBottomRightRadius: 6,
+  },
+  otherMessageBubble: {
+    backgroundColor: "#FFFFFF",
+    borderBottomLeftRadius: 6,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  optimisticMessage: {
+    opacity: 0.7,
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  ownMessageText: {
+    color: "#FFFFFF",
+  },
+  otherMessageText: {
+    color: "#333",
+  },
+  messageTime: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  ownMessageTime: {
+    color: "rgba(255, 255, 255, 0.8)",
+    textAlign: "right",
+  },
+  otherMessageTime: {
+    color: "#999",
+    textAlign: "left",
+  },
+  inputContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    backgroundColor: "#F8F9FA",
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 50,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+    maxHeight: 100,
+    paddingVertical: 8,
+  },
+  sendButton: {
+    backgroundColor: "#FE7A3A",
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  sendButtonDisabled: {
+    backgroundColor: "#CCC",
   },
 });
 

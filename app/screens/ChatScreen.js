@@ -26,6 +26,7 @@ import {
   DELETE_ROOM,
   ROOM_UPDATED,
 } from "../apollo/chat";
+import { WebSocketLink } from "@apollo/client/link/ws";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DELETE_WIDTH = 80;
@@ -104,7 +105,28 @@ const ChatScreen = ({ navigation, onClose }) => {
   const [selectedTab, setSelectedTab] = useState("chats");
   const [searchQuery, setSearchQuery] = useState("");
   const [connectionStatus, setConnectionStatus] = useState("connecting");
-
+  // Add this to your ChatRoomScreen.js
+  useEffect(() => {
+    if (subscriptionError) {
+      console.log("WebSocket connection error:", subscriptionError);
+      // Attempt to reconnect
+    }
+  }, [subscriptionError]); // Enhanced WebSocket configuration
+  const wsLink = new WebSocketLink({
+    uri: "ws://vrjj8bb9-3000.asse.devtunnels.ms/graphql",
+    options: {
+      reconnect: true,
+      reconnectionAttempts: 5,
+      timeout: 30000,
+      lazy: false, // Important: establishes connection immediately
+      connectionParams: async () => {
+        const token = await SecureStore.getItemAsync("access_token");
+        return {
+          authorization: token ? `Bearer ${token}` : "",
+        };
+      },
+    },
+  });
   // Enhanced GraphQL operations with better error handling
   const [createPrivateRoom] = useMutation(CREATE_PRIVATE_ROOM, {
     errorPolicy: "all",
@@ -670,14 +692,13 @@ const ChatScreen = ({ navigation, onClose }) => {
             <Ionicons name="close" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.closeButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Messages</Text>
-
-        {/* Connection status indicator */}
-        {connectionStatus !== "connected" && (
-          <View style={styles.connectionIndicator}>
-            <Text style={styles.connectionText}>{connectionStatus}</Text>
-          </View>
-        )}
       </LinearGradient>
 
       {/* Tab Buttons - Show only if user is not a landowner */}

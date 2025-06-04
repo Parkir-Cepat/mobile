@@ -48,7 +48,8 @@
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.10.0",
     "react-native-svg": "^15.12.0",
-    "react-native-toast-message": "^2.3.0"
+    "react-native-toast-message": "^2.3.0",
+    "subscriptions-transport-ws": "^0.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

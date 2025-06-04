@@ -25,9 +25,11 @@ import {
 } from "../apollo/chat";
 
 const ChatRoomScreen = ({ route, navigation }) => {
-  // Validate route params
+  // Enhanced route params validation
   const roomId = route?.params?.roomId;
   const contactName = route?.params?.contactName || "Unknown";
+  const landownerId = route?.params?.landownerId;
+  const bookingContext = route?.params?.bookingContext;
 
   if (!roomId) {
     Alert.alert("Error", "Invalid chat room");
@@ -403,6 +405,53 @@ const ChatRoomScreen = ({ route, navigation }) => {
     }
   };
 
+  // Add booking context message
+  const sendBookingContextMessage = async () => {
+    if (!bookingContext) return;
+
+    const contextMessage = `📋 Booking Details:
+🏢 Parking: ${bookingContext.parkingName}
+🚗 Vehicle: ${bookingContext.vehicleType}
+📅 Start: ${new Date(parseInt(bookingContext.startTime)).toLocaleDateString(
+      "id-ID",
+      {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    )}
+⏱️ Duration: ${bookingContext.duration} hours
+🆔 Booking ID: #${bookingContext.bookingId.slice(-8)}
+
+Hello! I have a confirmed booking for your parking space. Please let me know if you need any additional information.`;
+
+    try {
+      await sendMessage({
+        variables: {
+          input: {
+            room_id: roomId,
+            message: contextMessage,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error sending booking context:", error);
+    }
+  };
+
+  // Send booking context on first load
+  useEffect(() => {
+    if (bookingContext && messages.length === 0 && !isInitialLoad) {
+      // Send booking context message after a short delay
+      setTimeout(() => {
+        sendBookingContextMessage();
+      }, 1000);
+    }
+  }, [bookingContext, messages.length, isInitialLoad]);
+
   // Enhanced message rendering
   const renderMessage = ({ item: msg, index }) => {
     if (!msg || !msg._id || !msg.message) {
@@ -517,7 +566,7 @@ const ChatRoomScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Enhanced Header with Booking Context */}
       <LinearGradient
         colors={["#FF9A62", "#FE7A3A"]}
         start={{ x: 0, y: 0 }}
@@ -532,21 +581,48 @@ const ChatRoomScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle}>{contactName}</Text>
-          <Text
-            style={[
-              styles.headerSubtitle,
-              { color: getConnectionStatusColor() },
-            ]}
-          ></Text>
+          <Text style={styles.headerSubtitle}>
+            {bookingContext ? "Parking Owner" : "Online"}
+          </Text>
         </View>
+        {bookingContext && (
+          <TouchableOpacity
+            style={styles.infoButton}
+            onPress={() => {
+              Alert.alert(
+                "Booking Info",
+                `Parking: ${bookingContext.parkingName}\nVehicle: ${
+                  bookingContext.vehicleType
+                }\nBooking ID: #${bookingContext.bookingId.slice(-8)}`
+              );
+            }}
+          >
+            <Ionicons name="information-circle" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
       </LinearGradient>
 
-      {/* Messages */}
+      {/* Enhanced Messages with Booking Context Banner */}
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
+        {bookingContext && (
+          <View style={styles.bookingBanner}>
+            <View style={styles.bannerContent}>
+              <Ionicons name="car" size={20} color="#059669" />
+              <View style={styles.bannerText}>
+                <Text style={styles.bannerTitle}>Booking Chat</Text>
+                <Text style={styles.bannerSubtitle}>
+                  {bookingContext.parkingName} • ID: #
+                  {bookingContext.bookingId.slice(-8)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -564,20 +640,54 @@ const ChatRoomScreen = ({ route, navigation }) => {
           onLayout={() => scrollToBottom()}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No messages yet</Text>
-              <Text style={styles.emptySubtext}>Start the conversation!</Text>
+              <Ionicons name="chatbubble-outline" size={48} color="#CBD5E0" />
+              <Text style={styles.emptyText}>Start your conversation</Text>
+              <Text style={styles.emptySubtext}>
+                {bookingContext
+                  ? "Discuss your parking booking details with the owner"
+                  : "Send a message to begin chatting"}
+              </Text>
             </View>
           )}
         />
 
-        {/* Input Area */}
+        {/* Enhanced Input Area with Quick Messages */}
         <View style={styles.inputContainer}>
+          {bookingContext && (
+            <View style={styles.quickMessages}>
+              <TouchableOpacity
+                style={styles.quickMessageButton}
+                onPress={() => setMessage("What time can I arrive?")}
+              >
+                <Text style={styles.quickMessageText}>Arrival time?</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickMessageButton}
+                onPress={() =>
+                  setMessage("Are there any special parking instructions?")
+                }
+              >
+                <Text style={styles.quickMessageText}>Instructions?</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickMessageButton}
+                onPress={() => setMessage("Thank you for the confirmation!")}
+              >
+                <Text style={styles.quickMessageText}>Thank you!</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.inputWrapper}>
             <TextInput
               style={styles.textInput}
               value={message}
               onChangeText={setMessage}
-              placeholder="Type a message..."
+              placeholder={
+                bookingContext
+                  ? "Ask about your booking..."
+                  : "Type a message..."
+              }
               placeholderTextColor="#999"
               multiline
               maxLength={1000}
@@ -832,6 +942,56 @@ const styles = StyleSheet.create({
     backgroundColor: "#CBD5E0",
     shadowOpacity: 0,
     elevation: 0,
+  },
+  infoButton: {
+    padding: 10,
+    marginLeft: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  bookingBanner: {
+    backgroundColor: "#F0FDF4",
+    borderBottomWidth: 1,
+    borderBottomColor: "#D1FAE5",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  bannerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  bannerText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  bannerTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#059669",
+  },
+  bannerSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  quickMessages: {
+    flexDirection: "row",
+    paddingHorizontal: 4,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  quickMessageButton: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  quickMessageText: {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: "500",
   },
 });
 

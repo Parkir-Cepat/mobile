@@ -50,6 +50,12 @@ const GET_BOOKING = gql`
         status
         rating
         review_count
+        owner {
+          _id
+          name
+          email
+          role
+        }
       }
       vehicle_type
       start_time
@@ -61,6 +67,48 @@ const GET_BOOKING = gql`
       exit_qr
       created_at
       updated_at
+    }
+  }
+`;
+
+// Add mutations for chat functionality
+const CREATE_PRIVATE_ROOM = gql`
+  mutation CreatePrivateRoom($input: CreatePrivateRoomInput!) {
+    createPrivateRoom(input: $input) {
+      _id
+      name
+      participants {
+        _id
+        name
+        email
+        role
+      }
+      created_at
+    }
+  }
+`;
+
+const GET_USER_CHATS = gql`
+  query GetMyRooms {
+    getMyRooms {
+      _id
+      name
+      participants {
+        _id
+        name
+        email
+        role
+      }
+      last_message {
+        _id
+        message
+        created_at
+        sender {
+          _id
+          name
+        }
+      }
+      created_at
     }
   }
 `;
@@ -214,6 +262,14 @@ export default function UserBookingDetailScreen() {
   const [previousStatus, setPreviousStatus] = useState(null);
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [timerInterval, setTimerInterval] = useState(null);
+
+  // Add chat mutations
+  const [createPrivateRoom] = useMutation(CREATE_PRIVATE_ROOM, {
+    errorPolicy: "all",
+    onError: (error) => {
+      console.log("Create chat room error (silent):", error.message);
+    },
+  });
 
   const { data, loading, error, refetch } = useQuery(GET_BOOKING, {
     variables: { getBookingId: bookingId },
@@ -475,6 +531,71 @@ export default function UserBookingDetailScreen() {
   );
 
   const booking = data?.getBooking;
+  const landowner = booking?.parking?.owner;
+
+  // Add chat functionality
+  const handleChatWithOwner = async () => {
+    if (!landowner || !landowner._id) {
+      Alert.alert("Error", "Landowner information not available");
+      return;
+    }
+
+    try {
+      console.log("Creating chat room with landowner:", landowner.name);
+
+      const response = await createPrivateRoom({
+        variables: {
+          input: {
+            participant_id: landowner._id,
+          },
+        },
+      });
+
+      if (response.data?.createPrivateRoom) {
+        // Navigate to chat room with landowner's name
+        navigation.navigate("ChatRoomScreen", {
+          roomId: response.data.createPrivateRoom._id,
+          contactName: landowner.name,
+          bookingContext: {
+            bookingId: booking._id,
+            parkingName: booking.parking.name,
+            vehicleType: booking.vehicle_type,
+            startTime: booking.start_time,
+            duration: booking.duration,
+          },
+        });
+      } else if (response.errors) {
+        // Check if room already exists error
+        const errorMessage =
+          response.errors[0]?.message || "Failed to create chat room";
+
+        if (
+          errorMessage.includes("already exists") ||
+          errorMessage.includes("sudah ada")
+        ) {
+          // Room exists, try to find it and navigate
+          console.log("Chat room already exists, navigating...");
+          navigation.navigate("ChatRoomScreen", {
+            roomId: "existing", // We'll handle this in ChatRoomScreen
+            contactName: landowner.name,
+            landownerId: landowner._id,
+            bookingContext: {
+              bookingId: booking._id,
+              parkingName: booking.parking.name,
+              vehicleType: booking.vehicle_type,
+              startTime: booking.start_time,
+              duration: booking.duration,
+            },
+          });
+        } else {
+          Alert.alert("Chat Error", errorMessage);
+        }
+      }
+    } catch (error) {
+      console.error("Error creating chat room:", error);
+      Alert.alert("Error", "Failed to start chat. Please try again.");
+    }
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -1103,12 +1224,50 @@ export default function UserBookingDetailScreen() {
           </View>
         )}
 
+        {/* Landowner Contact Section - Show only for confirmed status */}
+        {booking.status === "confirmed" && landowner && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Contact Landowner</Text>
+            <View style={styles.ownerCard}>
+              <View style={styles.ownerInfo}>
+                <View style={styles.ownerAvatar}>
+                  <Text style={styles.ownerAvatarText}>
+                    {landowner.name?.charAt(0)?.toUpperCase() || "L"}
+                  </Text>
+                </View>
+                <View style={styles.ownerDetails}>
+                  <Text style={styles.ownerName}>{landowner.name}</Text>
+                  <Text style={styles.ownerRole}>Parking Owner</Text>
+                  <Text style={styles.ownerEmail}>{landowner.email}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.chatButton}
+                onPress={handleChatWithOwner}
+              >
+                <LinearGradient
+                  colors={["#10B981", "#059669"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.chatGradient}
+                >
+                  <Ionicons name="chatbubble" size={20} color="#FFFFFF" />
+                  <Text style={styles.chatButtonText}>Chat Owner</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Status Instructions */}
         <View style={styles.section}>
           <View style={styles.instructionCard}>
             <Ionicons name="information-circle" size={24} color="#3B82F6" />
             <Text style={styles.instructionText}>
               {getStatusMessage(booking.status)}
+              {booking.status === "confirmed" &&
+                landowner &&
+                "\n\nYou can now chat with the parking owner for any questions about your booking."}
             </Text>
           </View>
         </View>
@@ -1116,7 +1275,7 @@ export default function UserBookingDetailScreen() {
         <View style={styles.bottomSpacing} />
       </ScrollView>
 
-      {/* Bottom Actions */}
+      {/* Enhanced Bottom Actions */}
       <View style={styles.bottomActions}>
         {booking.status === "pending" && (
           <>
@@ -1153,10 +1312,31 @@ export default function UserBookingDetailScreen() {
         )}
 
         {booking.status === "confirmed" && (
-          <>
+          <View style={styles.confirmedActions}>
+            {/* Chat Button */}
+            {landowner && (
+              <TouchableOpacity
+                style={styles.chatOwnerButton}
+                onPress={handleChatWithOwner}
+              >
+                <LinearGradient
+                  colors={["#10B981", "#059669"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.payGradient}
+                >
+                  <Ionicons name="chatbubble" size={20} color="#FFFFFF" />
+                  <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
+                    Chat with {landowner.name}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
+            {/* QR Button */}
             {booking.entry_qr ? (
               <TouchableOpacity
-                style={styles.fullWidthButton}
+                style={styles.qrButton}
                 onPress={() =>
                   showQRCode(
                     booking.entry_qr,
@@ -1165,25 +1345,25 @@ export default function UserBookingDetailScreen() {
                 }
               >
                 <LinearGradient
-                  colors={["#10B981", "#059669"]}
+                  colors={["#3B82F6", "#1D4ED8"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.payGradient}
                 >
                   <Ionicons name="qr-code" size={20} color="#FFFFFF" />
                   <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
-                    Show Entry QR Code
+                    Show QR Code
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.fullWidthButton}
+                style={styles.qrButton}
                 onPress={handleGenerateEntryQR}
                 disabled={qrLoading}
               >
                 <LinearGradient
-                  colors={["#10B981", "#059669"]}
+                  colors={["#3B82F6", "#1D4ED8"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.payGradient}
@@ -1194,14 +1374,14 @@ export default function UserBookingDetailScreen() {
                     <>
                       <Ionicons name="qr-code" size={20} color="#FFFFFF" />
                       <Text style={[styles.payButtonText, { marginLeft: 8 }]}>
-                        Generate Entry QR
+                        Generate QR
                       </Text>
                     </>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
             )}
-          </>
+          </View>
         )}
 
         {booking.status === "active" && (
@@ -1292,7 +1472,9 @@ export default function UserBookingDetailScreen() {
           <View style={styles.cancellationInfo}>
             <Ionicons name="information-circle" size={16} color="#6B7280" />
             <Text style={styles.cancellationInfoText}>
-              Booking can only be cancelled when status is "pending"
+              {booking.status === "confirmed"
+                ? "You can now chat with the parking owner and use your QR code"
+                : 'Booking can only be cancelled when status is "pending"'}
             </Text>
           </View>
         )}
@@ -1930,5 +2112,85 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 16,
+  },
+
+  // Add new styles for landowner contact
+  ownerCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  ownerInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  ownerAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#E6FFFA",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+    borderWidth: 2,
+    borderColor: "#10B981",
+  },
+  ownerAvatarText: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  ownerDetails: {
+    flex: 1,
+  },
+  ownerName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1E3A8A",
+    marginBottom: 4,
+  },
+  ownerRole: {
+    fontSize: 14,
+    color: "#059669",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  ownerEmail: {
+    fontSize: 14,
+    color: "#6B7280",
+  },
+  chatButton: {
+    alignSelf: "flex-start",
+  },
+  chatGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  chatButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 8,
+  },
+
+  // Enhanced bottom action styles
+  confirmedActions: {
+    flex: 1,
+    gap: 12,
+  },
+  chatOwnerButton: {
+    flex: 1,
+  },
+  qrButton: {
+    flex: 1,
   },
 });

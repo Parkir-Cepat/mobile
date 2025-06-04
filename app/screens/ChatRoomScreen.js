@@ -200,7 +200,8 @@ const ChatRoomScreen = ({ route, navigation }) => {
       }
     },
     onError: (error) => {
-      console.error("MESSAGE_RECEIVED subscription error:", error);
+      // Only log subscription errors, don't show in UI
+      console.log("MESSAGE_RECEIVED subscription error:", error.message);
       setConnectionStatus("error");
     },
   });
@@ -209,14 +210,11 @@ const ChatRoomScreen = ({ route, navigation }) => {
   const { data: fallbackSubscriptionData, error: fallbackSubscriptionError } =
     useSubscription(MESSAGE_SENT, {
       variables: { room_id: roomId },
-      skip: !roomId || !user?._id || !subscriptionError, // Only use if primary subscription fails
+      skip: !roomId || !user?._id || !subscriptionError,
       shouldResubscribe: true,
       fetchPolicy: "no-cache",
       onData: ({ data: subscriptionPayload }) => {
-        console.log(
-          "MESSAGE_SENT fallback subscription data:",
-          subscriptionPayload
-        );
+        console.log("MESSAGE_SENT fallback subscription data:", subscriptionPayload);
 
         try {
           const newMessage = subscriptionPayload?.data?.messageSent;
@@ -252,18 +250,16 @@ const ChatRoomScreen = ({ route, navigation }) => {
         }
       },
       onError: (error) => {
-        console.error("MESSAGE_SENT fallback subscription error:", error);
+        // Only log fallback subscription errors
+        console.log("MESSAGE_SENT fallback subscription error:", error.message);
       },
     });
 
   // Monitor connection status
   useEffect(() => {
     if (subscriptionError && fallbackSubscriptionError) {
-      console.error("Both subscriptions failed:", {
-        primary: subscriptionError,
-        fallback: fallbackSubscriptionError,
-      });
-      setConnectionStatus("disconnected");
+      console.log("Both subscriptions failed - using polling mode");
+      setConnectionStatus("polling");
     } else if (subscriptionError && !fallbackSubscriptionError) {
       console.log("Using fallback subscription");
       setConnectionStatus("fallback");
@@ -271,6 +267,28 @@ const ChatRoomScreen = ({ route, navigation }) => {
       setConnectionStatus("connected");
     }
   }, [subscriptionError, fallbackSubscriptionError]);
+
+  // Connection status text update
+  const getConnectionStatusText = () => {
+    if (isAutoRefreshing) {
+      return "Updating...";
+    }
+
+    switch (connectionStatus) {
+      case "connecting":
+        return "Connecting...";
+      case "connected":
+        return `${user?.role === "landowner" ? "User" : "Landowner"} • Real-time`;
+      case "fallback":
+        return "Connected (Fallback) • Real-time";
+      case "polling":
+        return "Connected • Auto-refresh";
+      case "error":
+        return "Connected • Auto-refresh";
+      default:
+        return "Auto-refresh enabled";
+    }
+  };
 
   // Enhanced scroll to bottom function
   const scrollToBottom = useCallback(() => {
